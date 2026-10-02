@@ -672,7 +672,20 @@
     .login-card input { padding: 12px; background: #111827; border: 1px solid var(--card-border); border-radius: 10px; color: #fff; font-size: 1rem; outline: none; }
     .login-card .m-btn { padding: 12px; font-size: 0.95rem; }
     body.solo-lectura .card-actions, body.solo-lectura #bottomBar { display: none !important; }
-    body.no-resp .van-edit, body.no-resp .tab-add, body.no-resp .group-tools:not(.tools-persona), body.solo-lectura .tools-persona, body.no-resp #btnDelete { display: none !important; }
+    body.solo-lectura .van-edit, body.solo-lectura .tab-add, body.solo-lectura .group-tools, body.solo-lectura #btnDelete,
+    body.solo-lectura .g-edit, body.solo-lectura .btn-limpiar, body.solo-lectura .btn-anular { display: none !important; }
+    .g-edit { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 7px;
+      border: 1px solid var(--card-border); color: var(--text-muted); font-size: 0.8rem; margin-left: 8px; flex-shrink: 0; }
+    .btn-devolver { border: 1px solid rgba(16, 185, 129, 0.5); background: rgba(16, 185, 129, 0.14); color: #a7f3d0; }
+    .btn-anular { margin-top: 4px; padding: 3px 8px; border-radius: 7px; border: 1px solid rgba(239,68,68,0.5);
+      background: rgba(239,68,68,0.12); color: #fca5a5; font-size: 0.68rem; font-weight: 700; cursor: pointer; font-family: inherit; }
+    tr.anulado td { opacity: 0.45; text-decoration: line-through; }
+    tr.anulado td .mov-user { text-decoration: none; }
+    .tag-anulado { display: inline-block; margin-top: 3px; font-size: 0.64rem; font-weight: 800; color: #f87171; text-decoration: none; }
+    .limpiar-list { max-height: 50vh; overflow-y: auto; border: 1px solid var(--card-border); border-radius: 10px; padding: 4px 10px; margin: 8px 0; }
+    .limpiar-list h4 { font-size: 0.72rem; color: var(--text-muted); margin: 10px 0 4px; }
+    .limpiar-list label { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 0.85rem; color: #e2e8f0; border-bottom: 1px solid var(--card-border); }
+    .limpiar-list input { width: 18px; height: 18px; flex-shrink: 0; }
     .m-pdf { background: rgba(239, 68, 68, 0.18); border: 1px solid rgba(239, 68, 68, 0.5); color: #fca5a5; }
     .backup-box { border-top: 1px solid var(--card-border); margin-top: 16px; padding-top: 12px; }
     .backup-box h3 { font-size: 0.85rem; color: #e2e8f0; margin: 0 0 4px; }
@@ -737,7 +750,7 @@
       <div style="display:flex; gap:8px;">
         <div class="fg" style="flex:1;">
           <label for="mCategory">Familia</label>
-          <select id="mCategory"></select>
+          <select id="mCategory" onchange="cambioFamilia(this)"></select>
         </div>
         <div class="fg" style="flex:1;">
           <label for="mUnit">Se cuenta en</label>
@@ -797,11 +810,12 @@
   <!-- Modal Asignar a furgoneta -->
   <div id="asignModal" class="modal-backdrop" onclick="if (event.target === this) closeM('asignModal')">
     <div class="modal-sheet">
-      <h2>🚐 Asignar material</h2>
+      <h2 id="asignTitle">🚐 Asignar material</h2>
+      <input type="hidden" id="asignModo" value="entregar">
       <p class="mov-sheet-sub" id="asignSub"></p>
       <input type="hidden" id="asignId">
       <div class="fg">
-        <label for="aFurgo">¿A quién se lo das?</label>
+        <label for="aFurgo" id="aFurgoLabel">¿A quién se lo das?</label>
         <select id="aFurgo"></select>
       </div>
       <div class="fg" id="fgAUnit">
@@ -818,7 +832,7 @@
       <p class="hint" id="asignHint"></p>
       <div class="modal-btns">
         <button class="m-btn m-cancel" onclick="closeM('asignModal')">Cancelar</button>
-        <button class="m-btn m-save" onclick="doAsignar()">Asignar</button>
+        <button class="m-btn m-save" id="asignBtn" onclick="doAsignar()">Asignar</button>
       </div>
     </div>
   </div>
@@ -860,6 +874,21 @@
       </div>
       <div class="modal-btns">
         <button class="m-btn m-cancel" onclick="closeM('histModal')">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal limpiar catálogo -->
+  <div id="limpiarModal" class="modal-backdrop" onclick="if (event.target === this) closeM('limpiarModal')">
+    <div class="modal-sheet">
+      <h2>🧹 Limpiar catálogo</h2>
+      <p class="mov-sheet-sub" id="limpiarSub"></p>
+      <label class="check"><input type="checkbox" id="limpiarTodos" onchange="marcarTodosLimpiar(this.checked)"> Marcar todos</label>
+      <div id="limpiarList" class="limpiar-list"></div>
+      <p class="hint">Solo aparecen los materiales sin stock y sin ningún movimiento. Los que tienen historial no se pueden borrar desde aquí.</p>
+      <div class="modal-btns">
+        <button class="m-btn m-cancel" onclick="closeM('limpiarModal')">Cerrar</button>
+        <button class="m-btn m-del" id="limpiarBtn" onclick="doLimpiar()">Borrar marcados</button>
       </div>
     </div>
   </div>
@@ -1141,7 +1170,9 @@
     ];
 
     // ================== ESTADO ==================
-    let owners = [], items = [], movs = [], furgos = [], personas = [];
+    let owners = [], items = [], movs = [], furgos = [], personas = [], familias = [];
+    let movsAll = [];               // todos los movimientos, incluidos los anulados (movs = solo los válidos)
+    let ultimoRefresco = Date.now();
     let verQuien = "personas";      // vista de la pestaña Quién tiene qué
     let currentTab = "inicio";      // "inicio", propietario, "furgonetas" o "reponer"
     const DIAS_ALERTA_BOBINA = 15;  // a partir de cuántos días fuera se marca una bobina en rojo
@@ -1178,7 +1209,8 @@
     function mapMov(r) {
       return { dbId: r.id, t: new Date(r.t).getTime(), id: r.item_id, name: r.name, owner: r.owner, unit: r.unit,
         tipo: r.tipo, cant: r.cant, destino: r.destino || "", destinoKey: r.destino_key || "", persona: r.persona || "", personaKey: r.persona_key || "", sueltas: r.sueltas,
-        abiertas: r.abiertas, terminada: r.terminada, unitOverride: r.unit_override || undefined, user: r.user_email || "" };
+        abiertas: r.abiertas, terminada: r.terminada, unitOverride: r.unit_override || undefined, user: r.user_email || "",
+        anulado: !!r.anulado, anuladoPor: r.anulado_por || "" };
     }
     function mapLista(r) { return { key: r.key, name: r.name, fixed: r.fixed, orden: r.orden }; }
 
@@ -1207,29 +1239,40 @@
       owners = o.map(mapLista);
       furgos = f.map(mapLista);
       items = it.map(mapItem);
+      try {
+        familias = (await cargarTabla("familias", [["orden", true], ["label", true]])).map(r => ({ key: r.key, label: r.label, grupo: r.grupo, orden: r.orden }));
+      } catch (e) { familias = []; }   // si aún no se ha ejecutado el SQL de mejoras, se usan las de serie
     }
 
     async function cargarTodo() {
       await cargarListas();
-      movs = (await cargarTabla("movs", [["t", false], ["id", false]])).map(mapMov);
+      movsAll = (await cargarTabla("movs", [["t", false], ["id", false]])).map(mapMov);
+      derivarMovs();
+      ultimoRefresco = Date.now();
     }
+
+    function derivarMovs() { movs = movsAll.filter(m => !m.anulado); }
 
     // Recarga tras un cambio propio (por si el tiempo real tarda o no está activo)
     async function refrescar() {
       try {
         await cargarListas();
-        const desde = movs.length ? new Date(movs[0].t - 60000).toISOString() : "1970-01-01T00:00:00Z";
-        const { data, error } = await sb.from("movs").select("*").gte("t", desde)
+        const desde = movsAll.length ? new Date(movsAll[0].t - 60000).toISOString() : "1970-01-01T00:00:00Z";
+        const desdeAnul = new Date(ultimoRefresco - 120000).toISOString();
+        let { data, error } = await sb.from("movs").select("*").or(`t.gte.${desde},anulado_at.gte.${desdeAnul}`)
           .order("t", { ascending: false }).order("id", { ascending: false }).limit(1000);
-        if (!error) mezclarMovs((data || []).map(mapMov));
+        if (error) ({ data, error } = await sb.from("movs").select("*").gte("t", desde)
+          .order("t", { ascending: false }).order("id", { ascending: false }).limit(1000));
+        if (!error) { mezclarMovs((data || []).map(mapMov)); ultimoRefresco = Date.now(); }
       } catch (e) { console.error(e); }
       render();
     }
 
     function mezclarMovs(nuevos) {
-      const vistos = new Set(movs.map(m => m.dbId));
-      nuevos.forEach(m => { if (!vistos.has(m.dbId)) movs.push(m); });
-      movs.sort((a, b) => b.t - a.t || b.dbId - a.dbId);
+      const pos = new Map(movsAll.map((m, k) => [m.dbId, k]));
+      nuevos.forEach(m => { if (pos.has(m.dbId)) movsAll[pos.get(m.dbId)] = m; else movsAll.push(m); });
+      movsAll.sort((a, b) => b.t - a.t || b.dbId - a.dbId);
+      derivarMovs();
     }
 
     function programarRender() {
@@ -1248,13 +1291,15 @@
           }
           programarRender();
         })
-        .on("postgres_changes", { event: "INSERT", schema: "public", table: "movs" }, p => {
+        .on("postgres_changes", { event: "*", schema: "public", table: "movs" }, p => {
+          if (p.eventType === "DELETE") return;
           mezclarMovs([mapMov(p.new)]);
           programarRender();
         })
         .on("postgres_changes", { event: "*", schema: "public", table: "owners" }, () => refrescar())
         .on("postgres_changes", { event: "*", schema: "public", table: "furgos" }, () => refrescar())
         .on("postgres_changes", { event: "*", schema: "public", table: "personas" }, () => refrescar())
+        .on("postgres_changes", { event: "*", schema: "public", table: "familias" }, () => refrescar())
         .subscribe();
     }
 
@@ -1290,10 +1335,42 @@
     }
     function unidadPlural(u) { return unidadTxt(u, 2); }
     function fmtM(n) { return Number(n || 0).toLocaleString("es-ES") + " m"; }
-    function catsFor(owner) { return owner === "propio" ? CAT_CONSUMIBLES : CAT_OPERADORA; }
+    function grupoDe(owner) { return owner === "propio" ? "consumible" : "operadora"; }
+    function catsFor(owner) {
+      const g = grupoDe(owner);
+      const deBd = familias.filter(f => f.grupo === g);
+      return deBd.length ? deBd : (g === "consumible" ? CAT_CONSUMIBLES : CAT_OPERADORA);
+    }
     function nombreCategoria(key) {
-      const c = [...CAT_CONSUMIBLES, ...CAT_OPERADORA].find(c => c.key === key);
+      const c = familias.find(c => c.key === key) || [...CAT_CONSUMIBLES, ...CAT_OPERADORA].find(c => c.key === key);
       return c ? c.label : key;
+    }
+
+    async function nuevaFamilia(owner) {
+      const label = (prompt("Nombre de la familia nueva:") || "").trim();
+      if (!label) return null;
+      const g = grupoDe(owner);
+      if (catsFor(owner).some(c => sinEmoji(c.label).toLowerCase() === label.toLowerCase())) { alert("Ya existe una familia con ese nombre."); return null; }
+      const key = uid("fam");
+      if (!await consulta(sb.from("familias").insert({ key, label, grupo: g, orden: catsFor(owner).length }))) return null;
+      await refrescar();
+      return key;
+    }
+
+    async function editFamilia(key, owner) {
+      if (!puedeMover()) return;
+      const fam = familias.find(f => f.key === key);
+      if (!fam) return alert("Ejecuta primero el SQL de mejoras para poder editar las familias.");
+      const nuevo = prompt(esResponsable() ? `Nuevo nombre para "${fam.label}".\nDéjalo vacío para eliminarla.` : `Nuevo nombre para "${fam.label}":`, fam.label);
+      if (nuevo === null) return;
+      const limpio = nuevo.trim();
+      if (limpio) { await consulta(sb.from("familias").update({ label: limpio }).eq("key", key)); await refrescar(); return; }
+      if (!esResponsable()) return;
+      const usados = items.filter(i => i.cat === key).length;
+      if (usados) return alert(`No se puede eliminar: hay ${usados} materiales en esta familia. Muévelos antes a otra.`);
+      if (!confirm(`¿Eliminar la familia "${fam.label}"?`)) return;
+      await consulta(sb.from("familias").delete().eq("key", key));
+      await refrescar();
     }
     function ownerName(key) { const o = owners.find(o => o.key === key); return o ? o.name : key; }
     function furgoName(key) { const f = furgos.find(f => f.key === key); return f ? f.name : "Furgoneta eliminada"; }
@@ -1334,7 +1411,7 @@
 
     // ================== MOVIMIENTOS ==================
     const GRUPOS_MOV = {
-      entrada: { tipos: ["entrada"], titulo: "🔺 Entradas" },
+      entrada: { tipos: ["entrada", "devolucion"], titulo: "🔺 Entradas y devoluciones" },
       salida: { tipos: ["salida", "asignacion", "metros"], titulo: "🔻 Salidas, asignaciones y metros gastados" },
       ajuste: { tipos: ["ajuste"], titulo: "✎ Ajustes de recuento" }
     };
@@ -1353,6 +1430,7 @@
 
     function textoMov(m) {
       const abiertasTxt = m.abiertas ? `, abiertas ${m.abiertas} ${unidadTxt("caja", m.abiertas)}` : "";
+      if (m.tipo === "devolucion") return { cls: "mov-in-cell", txt: `${m.cant} ${m.sueltas ? "uds sueltas" : unidadTxt(m.unit, m.cant)} de vuelta de ${esc(quienTxt(m))}` };
       if (m.tipo === "asignacion") return { cls: "mov-asig-cell", txt: `${m.cant} ${m.unit === "unidad" && m.sueltas ? "uds sueltas" : unidadTxt(m.unit, m.cant)} a ${esc(quienTxt(m))}${abiertasTxt}` };
       if (m.tipo === "metros") {
         let t = `${fmtM(m.cant)} gastados`;
@@ -1368,6 +1446,29 @@
       return { cls: m.tipo === "entrada" ? "mov-in-cell" : "mov-out-cell", txt: `${m.cant} ${m.sueltas ? "uds sueltas" : unidadTxt(m.unit, m.cant)}${abiertasTxt}` };
     }
 
+    function filaMov(m, columna2) {
+      const x = textoMov(m);
+      const anul = m.anulado ? `<div class="tag-anulado">ANULADO${m.anuladoPor ? ` por ${esc(m.anuladoPor)}` : ""}</div>` : "";
+      const btn = !m.anulado && puedeMover() ? `<button type="button" class="btn-anular" data-anular="${m.dbId}">↶ Anular</button>` : "";
+      return `<tr class="${m.anulado ? "anulado" : ""}"><td>${fechaCorta(m.t)}${btn ? `<div>${btn}</div>` : ""}</td><td>${columna2}${m.user ? `<div class="mov-user">${esc(m.user)}</div>` : ""}${anul}</td><td class="${x.cls}">${x.txt}</td></tr>`;
+    }
+
+    function enlazarAnular(contenedor, alTerminar) {
+      contenedor.querySelectorAll("[data-anular]").forEach(b => b.addEventListener("click", async () => {
+        const m = movsAll.find(x => x.dbId === Number(b.dataset.anular));
+        if (!m) return;
+        const x = textoMov(m);
+        const txt = x.txt.replace(/<[^>]+>/g, "");
+        if (!confirm(`¿Anular este movimiento?\n\n${m.name}: ${TIPOS_TXT[m.tipo] || m.tipo}, ${txt}\n\nSe deshace su efecto en el stock y queda marcado como anulado en el historial.`)) return;
+        if (await rpc("anular", { p_mov: m.dbId })) {
+          m.anulado = true;
+          derivarMovs();
+          render();
+          alTerminar();
+        }
+      }));
+    }
+
     function openMovModal(grupo) {
       const g = GRUPOS_MOV[grupo];
       document.getElementById("movModalTitle").textContent = g.titulo;
@@ -1376,7 +1477,8 @@
       const tbody = document.getElementById("movTableBody");
       tbody.innerHTML = filas.length === 0
         ? `<tr><td colspan="3" style="text-align:center; padding:18px; color:var(--text-muted);">Todavía no hay movimientos de este tipo.</td></tr>`
-        : filas.map(m => { const x = textoMov(m); return `<tr><td>${fechaCorta(m.t)}</td><td>${esc(m.name)}${m.user ? `<div class="mov-user">${esc(m.user)}</div>` : ""}</td><td class="${x.cls}">${x.txt}</td></tr>`; }).join("");
+        : filas.map(m => filaMov(m, esc(m.name))).join("");
+      enlazarAnular(tbody, () => openMovModal(grupo));
       openM("movModal");
     }
 
@@ -1431,7 +1533,7 @@
     }
 
     async function addOwner() {
-      if (!esResponsable()) return;
+      if (!puedeMover()) return;
       const name = (prompt("Nombre de la nueva operadora:") || "").trim();
       if (!name) return;
       if (owners.some(o => o.name.toLowerCase() === name.toLowerCase())) return alert("Ya existe una pestaña con ese nombre.");
@@ -1445,13 +1547,14 @@
     }
 
     async function editOwner(key) {
-      if (!esResponsable()) return;
+      if (!puedeMover()) return;
       const o = owners.find(o => o.key === key);
       if (!o) return;
-      const nuevo = prompt(`Nuevo nombre para "${o.name}".\nDéjalo vacío para eliminar la operadora.`, o.name);
+      const nuevo = prompt(esResponsable() ? `Nuevo nombre para "${o.name}".\nDéjalo vacío para eliminar la operadora.` : `Nuevo nombre para "${o.name}":`, o.name);
       if (nuevo === null) return;
       const limpio = nuevo.trim();
       if (limpio) { await consulta(sb.from("owners").update({ name: limpio }).eq("key", key)); await refrescar(); return; }
+      if (!esResponsable()) return alert("Solo un responsable puede eliminar operadoras.");
       const conStock = items.filter(i => i.owner === key && (i.qty > 0 || i.sueltas > 0 || fueraTotal(i) > 0)).length;
       if (conStock > 0) return alert(`No se puede eliminar: hay ${conStock} materiales con stock o bobinas fuera en ${o.name}.`);
       if (!confirm(`¿Eliminar la pestaña ${o.name} y su catálogo?`)) return;
@@ -1506,19 +1609,35 @@
         container.appendChild(emptyMsg(searchQuery ? "Ningún material coincide con la búsqueda." : `No hay materiales aquí. Pulsa "${addBtn.textContent}" para crear uno.`));
         return;
       }
+      if (puedeMover() && !searchQuery) {
+        const tb = document.createElement("div");
+        tb.className = "reponer-toolbar btn-limpiar";
+        tb.innerHTML = `<button type="button" class="export-btn export-inv">🧹 Limpiar catálogo</button>
+          <button type="button" class="export-btn export-inv">➕ Nueva familia</button>`;
+        const [bL, bF] = tb.querySelectorAll("button");
+        bL.addEventListener("click", () => openLimpiar(currentTab));
+        bF.addEventListener("click", () => nuevaFamilia(currentTab));
+        container.appendChild(tb);
+      }
       const cats = [...catsFor(currentTab)];
       lista.forEach(i => { if (!cats.some(c => c.key === i.cat)) cats.push({ key: i.cat, label: nombreCategoria(i.cat) }); });
       cats.forEach(c => {
         const deGrupo = lista.filter(i => i.cat === c.key);
-        if (deGrupo.length === 0) return;
+        // Las familias vacías solo se muestran sin búsqueda, para que se vea que existen
+        if (deGrupo.length === 0 && (searchQuery || !familias.some(fm => fm.key === c.key))) return;
         const gKey = `${currentTab}:${c.key}`;
         const lowG = deGrupo.filter(isLow).length;
         const meta = `${deGrupo.length}${lowG ? ` <span class="g-low">⚠️ ${lowG}</span>` : ""}`;
-        container.appendChild(makeGroup(gKey, c.label, meta, body => deGrupo.forEach(i => body.appendChild(createItemCard(i, false)))));
+        const ownerTab = currentTab;
+        container.appendChild(makeGroup(gKey, c.label, meta, body => {
+            if (!deGrupo.length) { const v = emptyMsg("Familia vacía. Crea un material o edita uno existente y elige esta familia."); v.style.padding = "12px"; body.appendChild(v); }
+            deGrupo.forEach(i => body.appendChild(createItemCard(i, false)));
+          },
+          familias.some(fm => fm.key === c.key) ? () => editFamilia(c.key, ownerTab) : null));
       });
     }
 
-    function makeGroup(gKey, label, metaHtml, fillBody) {
+    function makeGroup(gKey, label, metaHtml, fillBody, onEdit) {
       const open = openGroups.has(gKey) || !!searchQuery;
       const g = document.createElement("div");
       g.className = "group" + (open ? " open" : "");
@@ -1526,7 +1645,8 @@
       head.type = "button";
       head.className = "group-head";
       head.setAttribute("aria-expanded", open ? "true" : "false");
-      head.innerHTML = `<span>${label}</span><span class="g-meta">${metaHtml}<span class="chev">›</span></span>`;
+      head.innerHTML = `<span>${label}${onEdit ? `<span class="g-edit" role="button" title="Renombrar familia">✎</span>` : ""}</span><span class="g-meta">${metaHtml}<span class="chev">›</span></span>`;
+      if (onEdit) head.querySelector(".g-edit").addEventListener("click", ev => { ev.stopPropagation(); onEdit(); });
       const body = document.createElement("div");
       body.className = "group-body";
       head.addEventListener("click", () => {
@@ -1565,9 +1685,9 @@
       lista.forEach(m => {
         const k = m.id + "|" + m.unit + "|" + (m.sueltas ? 1 : 0);
         if (!resumen[k]) resumen[k] = { name: m.name, owner: m.owner, unit: m.unit, sueltas: !!m.sueltas, cant: 0 };
-        resumen[k].cant += m.cant;
+        resumen[k].cant += m.tipo === "devolucion" ? -m.cant : m.cant;
       });
-      return Object.values(resumen).sort((a, b) => a.name.localeCompare(b.name));
+      return Object.values(resumen).filter(r => r.cant > 0).sort((a, b) => a.name.localeCompare(b.name));
     }
 
     function htmlQuienTiene(bobinas, filas) {
@@ -1575,7 +1695,7 @@
       html += bobinas.length
         ? "<ul>" + bobinas.map(b => `<li><span>${esc(b.item.name)} <span class="owner-tag">${esc(ownerName(b.item.owner))}</span>${b.quien ? ` <span class="mov-user">${esc(b.quien)}</span>` : ""}</span><b>${b.n} ${unidadTxt("bobina", b.n)}</b></li>`).join("") + "</ul>"
         : `<p class="hint">Ninguna.</p>`;
-      html += "<h3>Total asignado</h3>";
+      html += "<h3>Total asignado (descontando devoluciones)</h3>";
       html += filas.length
         ? "<ul>" + filas.map(r => `<li><span>${esc(r.name)} <span class="owner-tag">${esc(ownerName(r.owner))}</span></span><b>${r.cant} ${r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant)}</b></li>`).join("") + "</ul>"
         : `<p class="hint">Todavía no se le ha asignado material.</p>`;
@@ -1591,7 +1711,7 @@
       tb.querySelectorAll("[data-v]").forEach(b => b.addEventListener("click", () => { verQuien = b.dataset.v; render(); }));
       container.appendChild(tb);
 
-      const asignaciones = movs.filter(m => m.tipo === "asignacion");
+      const asignaciones = movs.filter(m => m.tipo === "asignacion" || m.tipo === "devolucion");
 
       if (verQuien === "personas") {
         if (!personas.length) {
@@ -1720,6 +1840,7 @@
           ${filaMes("🔺 Entradas", ["entrada"])}
           ${filaMes("🔻 Salidas", ["salida"])}
           ${filaMes("🚐 Asignaciones", ["asignacion"])}
+          ${filaMes("↩️ Devoluciones", ["devolucion"])}
           ${filaMes("✎ Ajustes", ["ajuste"])}
           <span>📏 Metros gastados</span><b>${fmtM(metrosMes(mesAct))}</b><b style="color:var(--text-muted)">${fmtM(metrosMes(mesAnt))}</b>
         </div></div>`;
@@ -1787,12 +1908,12 @@
       }
       document.getElementById("histResumen").innerHTML = res;
       document.getElementById("histResumen").style.display = res ? "grid" : "none";
-      document.getElementById("histBody").innerHTML = lista.length
-        ? lista.map(m => {
-            const x = textoMov(m);
-            return `<tr><td>${fechaCorta(m.t)}</td><td>${TIPOS_TXT[m.tipo] || m.tipo}${m.user ? `<div class="mov-user">${esc(m.user)}</div>` : ""}</td><td class="${x.cls}">${x.txt}</td></tr>`;
-          }).join("")
+      const listaTodos = movsAll.filter(m => m.id === id);
+      const hb = document.getElementById("histBody");
+      hb.innerHTML = listaTodos.length
+        ? listaTodos.map(m => filaMov(m, TIPOS_TXT[m.tipo] || m.tipo)).join("")
         : `<tr><td colspan="3" style="text-align:center; padding:18px; color:var(--text-muted);">Sin movimientos todavía.</td></tr>`;
+      enlazarAnular(hb, () => openHist(id));
       openM("histModal");
     }
 
@@ -1828,7 +1949,7 @@
           <button class="btn-step btn-minus" aria-label="Salida de 1">−</button>
           <button class="btn-step btn-plus" aria-label="Entrada de 1">+</button>
           <button class="btn-wide btn-asignar">🚐 Asignar ${esCaja(item) ? "cajas o sueltas" : unidadPlural(item.unit)}</button>
-          ${bob ? `<button class="btn-wide btn-metros">📏 Metros gastados</button>` : ""}
+          ${bob ? `<button class="btn-wide btn-metros">📏 Metros gastados</button>` : `<button class="btn-wide btn-devolver">↩️ Devolver</button>`}
         </div>
       `;
       card.querySelector(".item-info").addEventListener("click", () => puedeMover() ? openEditModal(item.id) : openHist(item.id));
@@ -1836,6 +1957,7 @@
       card.querySelector(".btn-plus").addEventListener("click", () => changeQty(item.id, 1));
       card.querySelector(".btn-asignar").addEventListener("click", () => openAsignar(item.id));
       if (bob) card.querySelector(".btn-metros").addEventListener("click", () => openMetros(item.id));
+      else card.querySelector(".btn-devolver").addEventListener("click", () => openAsignar(item.id, "devolver"));
       return card;
     }
 
@@ -1848,11 +1970,16 @@
     }
 
     // ================== ASIGNAR ==================
-    function openAsignar(id) {
+    function openAsignar(id, modo) {
       const item = items.find(i => i.id === id);
       if (!item) return;
+      const dev = modo === "devolver";
       if (!furgos.length && !personas.length) return alert("Primero da de alta personas o furgonetas en la pestaña 👷 Quién tiene qué.");
-      if (item.qty < 1 && !(esCaja(item) && item.sueltas > 0)) return alert(`No queda ${item.name} en el almacén.`);
+      if (!dev && item.qty < 1 && !(esCaja(item) && item.sueltas > 0)) return alert(`No queda ${item.name} en el almacén.`);
+      document.getElementById("asignModo").value = dev ? "devolver" : "entregar";
+      document.getElementById("asignTitle").textContent = dev ? "↩️ Devolver al almacén" : "🚐 Asignar material";
+      document.getElementById("aFurgoLabel").textContent = dev ? "¿Quién lo devuelve?" : "¿A quién se lo das?";
+      document.getElementById("asignBtn").textContent = dev ? "Devolver" : "Asignar";
       document.getElementById("asignId").value = id;
       document.getElementById("asignSub").textContent = `${item.name} (${ownerName(item.owner)}). En almacén: ${item.qty} ${unidadTxt(item.unit, item.qty)}${esCaja(item) ? ` y ${item.sueltas} sueltas` : ""}.`;
       document.getElementById("fgAUnit").style.display = esCaja(item) ? "block" : "none";
@@ -1862,9 +1989,6 @@
         `<optgroup label="Furgoneta, sin persona">${furgos.map(f => `<option value="${f.key}">${esc(f.name)}</option>`).join("")}</optgroup>`;
       document.getElementById("aQty").value = "1";
       updateAsignLabel();
-      document.getElementById("asignHint").textContent = esBobina(item)
-        ? "La bobina sale del almacén y queda apuntada a quien la recibe hasta que la devuelva con los metros gastados."
-        : "Se resta del almacén. Si se lo das a una persona, cuenta para ella y para su furgoneta.";
       openM("asignModal");
     }
 
@@ -1873,6 +1997,10 @@
       if (!item) return;
       const suelta = esCaja(item) && document.getElementById("aUnit").value === "suelta";
       document.getElementById("aQtyLabel").textContent = `Cantidad (${suelta ? "unidades sueltas" : unidadPlural(item.unit)})`;
+      if (document.getElementById("asignModo").value === "devolver") {
+        document.getElementById("asignHint").textContent = "Se suma al almacén y se descuenta de lo que tiene asignado esa persona o furgoneta.";
+        return;
+      }
       if (suelta) document.getElementById("asignHint").textContent = item.porCaja
         ? `Si no llegan las sueltas se abre una caja automáticamente (${item.porCaja} uds por caja).`
         : "Se descuentan de las sueltas. Para que abra cajas solo, indica al editar cuántas unidades trae cada caja.";
@@ -1887,6 +2015,10 @@
       const n = parseInt(document.getElementById("aQty").value, 10);
       if (!item || !n || n < 1) return alert("Indica una cantidad mayor que 0.");
       const sueltas = esCaja(item) && document.getElementById("aUnit").value === "suelta";
+      if (document.getElementById("asignModo").value === "devolver") {
+        if (await rpc("devolver", { p_item: item.id, p_origen: fKey, p_cant: n, p_sueltas: sueltas })) closeM("asignModal");
+        return;
+      }
       if (!sueltas && n > item.qty) return alert(`Solo hay ${item.qty} ${unidadTxt(item.unit, item.qty)} en el almacén.`);
       if (await rpc("asignar", { p_item: item.id, p_destino: fKey, p_cant: n, p_sueltas: sueltas })) closeM("asignModal");
     }
@@ -1988,11 +2120,23 @@
 
     // ================== MODAL MATERIAL ==================
     function fillSelects(owner) {
-      document.getElementById("mCategory").innerHTML = catsFor(owner).map(c => `<option value="${c.key}">${c.label}</option>`).join("");
+      document.getElementById("mCategory").innerHTML = catsFor(owner).map(c => `<option value="${c.key}">${c.label}</option>`).join("") +
+        `<option value="__nueva">➕ Nueva familia…</option>`;
+      document.getElementById("mCategory").dataset.owner = owner;
       document.getElementById("mUnit").innerHTML = UNIDADES.map(u => {
         const t = u.key === "metro" ? "Metros" : u.p.charAt(0).toUpperCase() + u.p.slice(1);
         return `<option value="${u.key}">${t}</option>`;
       }).join("");
+    }
+
+    async function cambioFamilia(sel) {
+      if (sel.value !== "__nueva") { sel.dataset.prev = sel.value; return; }
+      const owner = sel.dataset.owner;
+      const key = await nuevaFamilia(owner);
+      const actual = sel.dataset.prev || catsFor(owner)[0].key;
+      sel.innerHTML = catsFor(owner).map(c => `<option value="${c.key}">${c.label}</option>`).join("") + `<option value="__nueva">➕ Nueva familia…</option>`;
+      sel.value = key || actual;
+      sel.dataset.prev = sel.value;
     }
 
     function toggleMetrosField() {
@@ -2111,11 +2255,16 @@
       closeM("itemModal");
     }
 
+    function sinUso(i) {
+      return i.qty === 0 && i.sueltas === 0 && i.metros === 0 && fueraTotal(i) === 0 && !movs.some(m => m.id === i.id);
+    }
+
     async function deleteItem() {
-      if (!esResponsable()) return;
+      if (!puedeMover()) return;
       const id = document.getElementById("editId").value;
       const item = items.find(i => i.id === id);
       if (!item) return;
+      if (!esResponsable() && !sinUso(item)) return alert("Solo se pueden borrar materiales sin stock y sin movimientos. Para este, avisa a un responsable.");
       if (fueraTotal(item) > 0) return alert("Tiene bobinas fuera en furgonetas: no se puede borrar hasta que vuelvan.");
       if (!confirm("¿Borrar este material del catálogo?")) return;
       if (!await consulta(sb.from("items").delete().eq("id", id))) return;
@@ -2123,8 +2272,42 @@
       await refrescar();
     }
 
+    // ================== LIMPIAR CATÁLOGO ==================
+    function openLimpiar(owner) {
+      const lista = items.filter(i => i.owner === owner && sinUso(i));
+      document.getElementById("limpiarSub").textContent = `${ownerName(owner)}: ${lista.length} materiales sin stock ni movimientos.`;
+      document.getElementById("limpiarTodos").checked = false;
+      const cats = [...catsFor(owner)];
+      lista.forEach(i => { if (!cats.some(c => c.key === i.cat)) cats.push({ key: i.cat, label: nombreCategoria(i.cat) }); });
+      document.getElementById("limpiarList").innerHTML = lista.length ? cats.map(c => {
+        const deC = lista.filter(i => i.cat === c.key);
+        if (!deC.length) return "";
+        return `<h4>${esc(sinEmoji(c.label))}</h4>` + deC.map(i => `<label><input type="checkbox" value="${esc(i.id)}" onchange="contarLimpiar()"> ${esc(i.name)}</label>`).join("");
+      }).join("") : `<p class="hint">No hay nada que limpiar aquí.</p>`;
+      contarLimpiar();
+      openM("limpiarModal");
+    }
+    function marcarTodosLimpiar(v) {
+      document.querySelectorAll("#limpiarList input").forEach(c => { c.checked = v; });
+      contarLimpiar();
+    }
+    function contarLimpiar() {
+      const n = document.querySelectorAll("#limpiarList input:checked").length;
+      const b = document.getElementById("limpiarBtn");
+      b.textContent = n ? `Borrar ${n} marcados` : "Borrar marcados";
+      b.disabled = !n;
+    }
+    async function doLimpiar() {
+      const ids = [...document.querySelectorAll("#limpiarList input:checked")].map(c => c.value);
+      if (!ids.length) return;
+      if (!confirm(`¿Borrar ${ids.length} materiales del catálogo? No se puede deshacer.`)) return;
+      if (!await consulta(sb.from("items").delete().in("id", ids))) return;
+      closeM("limpiarModal");
+      await refrescar();
+    }
+
     // ================== EXPORTACIONES ==================
-    const TIPOS_TXT = { entrada: "Entrada", salida: "Salida", asignacion: "Asignación", metros: "Metros gastados", ajuste: "Ajuste" };
+    const TIPOS_TXT = { entrada: "Entrada", salida: "Salida", asignacion: "Asignación", metros: "Metros gastados", ajuste: "Ajuste", devolucion: "Devolución" };
 
     function ahora() {
       const d = new Date();
@@ -2260,16 +2443,16 @@
           const suyas = esP ? [] : personas.filter(p => p.furgo === sj.key);
           const claves = esP ? [sj.key] : [sj.key, ...suyas.map(p => p.key)];
           const bob = bobinasDe(claves);
-          const entregas = movs.filter(m => m.tipo === "asignacion" && okMes(m.t) && (esP ? m.personaKey === sj.key : m.destinoKey === sj.key));
+          const entregas = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && okMes(m.t) && (esP ? m.personaKey === sj.key : m.destinoKey === sj.key));
           const agg = resumenAsignado(entregas);
           const col1 = sj.name;
           const col2 = esP ? (sj.furgo ? furgoName(sj.furgo) : "Sin furgoneta") : (suyas.map(p => p.name).join(", ") || "Sin personas");
           const filasS = [];
           bob.forEach(b => filasS.push([b.item.name + (!esP && b.key !== sj.key ? ` (la tiene ${holderName(b.key)})` : ""), ownerName(b.item.owner), b.n, unidadTxt("bobina", b.n), "Bobina que tiene ahora"]));
-          agg.forEach(r => filasS.push([r.name, ownerName(r.owner), r.cant, r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant), `Entregado (${periodoTxt})`]));
+          agg.forEach(r => filasS.push([r.name, ownerName(r.owner), r.cant, r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant), `Entregado neto (${periodoTxt})`]));
           filasS.forEach(f => rows.push([col1, col2, ...f]));
           totBob += bob.reduce((a, b) => a + b.n, 0);
-          totEnt += entregas.length;
+          totEnt += entregas.filter(m => m.tipo === "asignacion").length;
           secciones.push({
             titulo: col1,
             sub: esP ? `Furgoneta: ${col2}` : `Personas: ${col2}`,
@@ -2286,16 +2469,17 @@
         movs.filter(m => okOwner(m.owner) && okMes(m.t)).forEach(m => {
           const u = m.tipo === "metros" ? null : unidadMov(m);
           const k = m.id + "|" + (u || unidadPlural(m.unit));
-          if (!acc[k]) acc[k] = { owner: m.owner, name: m.name, unidad: u || unidadPlural(m.unit), entradas: 0, salidas: 0, asignado: 0, ajustes: 0, metros: 0 };
+          if (!acc[k]) acc[k] = { owner: m.owner, name: m.name, unidad: u || unidadPlural(m.unit), entradas: 0, salidas: 0, asignado: 0, devuelto: 0, ajustes: 0, metros: 0 };
           const a = acc[k];
           if (m.tipo === "entrada") a.entradas += m.cant;
           else if (m.tipo === "salida") a.salidas += m.cant;
           else if (m.tipo === "asignacion") a.asignado += m.cant;
           else if (m.tipo === "metros") a.metros += m.cant;
           else if (m.tipo === "ajuste" && u !== "m") a.ajustes += m.cant;
+          else if (m.tipo === "devolucion") a.devuelto += m.cant;
         });
-        headers = ["Propietario", "Producto", "Unidad", "Entradas", "Salidas", "Asignado", "Ajustes de recuento", "Metros gastados"];
-        rows = Object.values(acc).sort(porOwner).map(a => [ownerName(a.owner), a.name, a.unidad, a.entradas, a.salidas, a.asignado, a.ajustes, a.metros || ""]);
+        headers = ["Propietario", "Producto", "Unidad", "Entradas", "Salidas", "Asignado", "Devuelto", "Ajustes de recuento", "Metros gastados"];
+        rows = Object.values(acc).sort(porOwner).map(a => [ownerName(a.owner), a.name, a.unidad, a.entradas, a.salidas, a.asignado, a.devuelto, a.ajustes, a.metros || ""]);
         resumen = [["Materiales con movimiento", rows.length], ["Metros gastados", fmtM(Object.values(acc).reduce((s, a) => s + a.metros, 0))]];
       } else if (tipo === "movimientos") {
         titulo = "Movimientos de almacén";
@@ -2308,9 +2492,9 @@
         titulo = "Asignaciones a personas y furgonetas";
         headers = ["Fecha", "Hora", "Persona", "Furgoneta", "Propietario", "Producto", "Tipo", "Cantidad", "Unidad", "Detalle", "Registrado por"];
         const okQuien = m => quien === "all" || (quien.startsWith("p-") ? m.personaKey === quien : m.destinoKey === quien);
-        const lista = movs.filter(m => (m.tipo === "asignacion" || (m.tipo === "metros" && (m.destinoKey || m.personaKey))) && okMes(m.t) && okQuien(m)).slice().reverse();
+        const lista = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion" || (m.tipo === "metros" && (m.destinoKey || m.personaKey))) && okMes(m.t) && okQuien(m)).slice().reverse();
         rows = lista.map(m => [...fechaHora(m.t), m.persona || "", m.destino || "", ownerName(m.owner), m.name,
-          m.tipo === "asignacion" ? "Asignado" : "Devuelta, metros gastados", m.cant, unidadMov(m), detalleMov(m), m.user || ""]);
+          m.tipo === "asignacion" ? "Asignado" : m.tipo === "devolucion" ? "Devuelto" : "Bobina devuelta, metros gastados", m.cant, unidadMov(m), detalleMov(m), m.user || ""]);
         resumen = [["Entregas", lista.filter(m => m.tipo === "asignacion").length], ["Bobinas devueltas", lista.filter(m => m.tipo === "metros").length]];
       }
       return { tipo, titulo, headers, rows, filtros, slugPeriodo, resumen, secciones, orient };
