@@ -1489,7 +1489,7 @@
 
       const bottomBar = document.getElementById("bottomBar");
       const addBtn = document.getElementById("btnAddBottom");
-      bottomBar.style.display = currentTab === "inicio" || currentTab === "reponer" || !puedeMover() || (currentTab === "furgonetas" && verQuien === "furgos" && !esResponsable()) ? "none" : "flex";
+      bottomBar.style.display = currentTab === "inicio" || currentTab === "reponer" || !puedeMover() || false ? "none" : "flex";
       addBtn.textContent = currentTab === "furgonetas" ? (verQuien === "personas" ? "➕ Añadir persona" : "➕ Añadir furgoneta")
         : currentTab === "propio" ? "➕ Añadir consumible" : `➕ Añadir material de ${ownerName(currentTab)}`;
 
@@ -1629,8 +1629,8 @@
         const meta = nBob ? `<span style="color:#d8b4fe">${nBob} ${unidadTxt("bobina", nBob)}</span>` : "";
         container.appendChild(makeGroup(`f:${f.key}`, `🚐 ${esc(f.name)}`, meta, body => {
           const tools = document.createElement("div");
-          tools.className = "group-tools";
-          tools.innerHTML = `<button type="button" class="btn-wide btn-asignar">✎ Renombrar o eliminar</button>`;
+          tools.className = "group-tools tools-persona";
+          tools.innerHTML = `<button type="button" class="btn-wide btn-asignar">${esResponsable() ? "✎ Renombrar o eliminar" : "✎ Renombrar"}</button>`;
           tools.querySelector("button").addEventListener("click", () => editFurgo(f.key));
           body.appendChild(tools);
           const div = document.createElement("div");
@@ -1920,7 +1920,7 @@
 
     // ================== FURGONETAS ==================
     async function addFurgo() {
-      if (!esResponsable()) return;
+      if (!puedeMover()) return;
       const name = (prompt("Nombre o matrícula de la furgoneta:") || "").trim();
       if (!name) return;
       if (furgos.some(f => f.name.toLowerCase() === name.toLowerCase())) return alert("Ya existe una furgoneta con ese nombre.");
@@ -1929,13 +1929,14 @@
     }
 
     async function editFurgo(key) {
-      if (!esResponsable()) return;
+      if (!puedeMover()) return;
       const f = furgos.find(f => f.key === key);
       if (!f) return;
-      const nuevo = prompt(`Nuevo nombre para "${f.name}".\nDéjalo vacío para eliminarla.`, f.name);
+      const nuevo = prompt(esResponsable() ? `Nuevo nombre para "${f.name}".\nDéjalo vacío para eliminarla.` : `Nuevo nombre para "${f.name}":`, f.name);
       if (nuevo === null) return;
       const limpio = nuevo.trim();
       if (limpio) { await consulta(sb.from("furgos").update({ name: limpio }).eq("key", key)); await refrescar(); return; }
+      if (!esResponsable()) return alert("Solo el responsable puede eliminar furgonetas.");
       if (f.fixed) return alert(`${f.name} es una de las furgonetas fijas: se puede renombrar, pero no eliminar.`);
       const conBobinas = items.filter(i => (i.fuera || {})[key] > 0).length;
       if (conBobinas) return alert(`No se puede eliminar: ${f.name} tiene bobinas sin devolver.`);
