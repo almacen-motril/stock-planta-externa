@@ -2245,7 +2245,17 @@
     }
 
     async function cambioFamilia(sel) {
-      if (sel.value !== "__nueva") { sel.dataset.prev = sel.value; return; }
+      if (sel.value !== "__nueva") {
+        sel.dataset.prev = sel.value;
+        // Al crear un material en una familia de bobinas, la unidad pasa sola a Bobinas y aparece el campo de metros
+        if (!document.getElementById("editId").value && /bobina/i.test(nombreCategoria(sel.value))) {
+          document.getElementById("mUnit").value = "bobina";
+          if (document.getElementById("mQty").value === "0") document.getElementById("mQty").value = "1";
+          toggleMetrosField();
+          document.getElementById("mMetros").focus();
+        }
+        return;
+      }
       const owner = sel.dataset.owner;
       const key = await nuevaFamilia(owner);
       const actual = sel.dataset.prev || todasFamilias()[0].key;
