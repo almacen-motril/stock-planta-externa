@@ -781,7 +781,7 @@
       </div>
 
       <div style="display:flex; gap:8px; align-items:flex-end;">
-        <div class="fg" style="flex:1;">
+        <div class="fg" style="flex:1; display:none;">
           <label for="mOwner">Propietario</label>
           <select id="mOwner" onchange="document.getElementById('mCategory').dataset.owner = this.value"></select>
         </div>
@@ -789,7 +789,7 @@
           <label class="check" style="margin:0 0 10px;"><input type="checkbox" id="mRet"> Se presta y se devuelve</label>
         </div>
       </div>
-      <p class="hint" id="retHint" style="margin-top:-6px;">Márcalo en herramientas y equipos (escaleras, fusionadoras...): quedan apuntados a quien los tiene hasta que los devuelve.</p>
+      <p class="hint" id="retHint">Márcalo en herramientas y equipos (escaleras, fusionadoras...): quedan apuntados a quien los tiene hasta que los devuelve.</p>
 
       <div style="display:flex; gap:8px;" id="fgSueltas">
         <div class="fg" style="flex:1;">
@@ -1647,17 +1647,9 @@
       // Filtro por propietario y herramientas del catálogo
       const tbF = document.createElement("div");
       tbF.className = "filtro-row";
-      tbF.innerHTML = `<select id="filtroOwnerSel" aria-label="Propietario">
-          <option value="all">📦 Todo el almacén</option>
-          ${owners.map(o => `<option value="${o.key}">${esc(o.name)}</option>`).join("")}
-        </select>
-        ${filtroOwner !== "all" && filtroOwner !== "propio" ? `<button type="button" class="export-btn export-inv btn-limpiar" data-a="editop">✎</button>` : ""}
-        <button type="button" class="export-btn export-inv btn-limpiar" data-a="addop">+ Operadora</button>
-        ${!searchQuery ? `<button type="button" class="export-btn export-inv btn-limpiar" data-a="limpiar">🧹 Limpiar</button>
-        <button type="button" class="export-btn export-inv btn-limpiar" data-a="familia">➕ Familia</button>` : ""}`;
-      const selF = tbF.querySelector("select");
-      selF.value = filtroOwner;
-      selF.addEventListener("change", () => { filtroOwner = selF.value; render(); });
+      filtroOwner = "all";
+      tbF.innerHTML = !searchQuery ? `<button type="button" class="export-btn export-inv btn-limpiar" data-a="limpiar">🧹 Limpiar catálogo</button>
+        <button type="button" class="export-btn export-inv btn-limpiar" data-a="familia">➕ Nueva familia</button>` : "";
       tbF.querySelectorAll("[data-a]").forEach(b => b.addEventListener("click", () => {
         const a = b.dataset.a;
         if (a === "editop") editOwner(filtroOwner);
@@ -1665,7 +1657,7 @@
         else if (a === "limpiar") openLimpiar();
         else if (a === "familia") nuevaFamilia(ownerActual());
       }));
-      container.appendChild(tbF);
+      if (tbF.innerHTML && puedeMover()) container.appendChild(tbF);
 
       const delOwner = items.filter(i => filtroOwner === "all" || i.owner === filtroOwner);
       const lista = delOwner.filter(i => i.name.toLowerCase().includes(searchQuery));
@@ -2502,7 +2494,8 @@
     function updateExportForm() {
       const cfg = EXPORT_TIPOS[document.getElementById("exTipo").value];
       document.getElementById("fgExMes").style.display = cfg.mes ? "block" : "none";
-      document.getElementById("fgExOwner").style.display = cfg.owner ? "block" : "none";
+      document.getElementById("fgExOwner").style.display = "none";
+      document.getElementById("exOwner").value = "all";
       document.getElementById("fgExFurgo").style.display = cfg.quien ? "block" : "none";
       const sel = document.getElementById("exFurgo");
       const optP = `<optgroup label="Personas">${personas.map(p => `<option value="${p.key}">${esc(p.name)}</option>`).join("")}</optgroup>`;
