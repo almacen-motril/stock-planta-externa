@@ -674,6 +674,17 @@
     body.solo-lectura .card-actions, body.solo-lectura #bottomBar { display: none !important; }
     body.solo-lectura .van-edit, body.solo-lectura .tab-add, body.solo-lectura .group-tools, body.solo-lectura #btnDelete,
     body.solo-lectura .g-edit, body.solo-lectura .btn-limpiar, body.solo-lectura .btn-anular { display: none !important; }
+    .li-acc { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+    .li-acc .btn-wide { flex: 0 0 auto; min-height: 34px; padding: 4px 12px; }
+    .ret-tag { color: #a7f3d0; font-weight: 700; }
+    .filtro-row { display: flex; gap: 6px; align-items: center; grid-column: 1 / -1; flex-wrap: wrap; }
+    .filtro-row select { flex: 1; min-width: 160px; padding: 10px; background: #0b0f19; border: 1px solid var(--card-border);
+      border-radius: 10px; color: #fff; font-family: inherit; font-size: 0.85rem; }
+    .pick-list { max-height: 55vh; overflow-y: auto; margin-top: 8px; }
+    .pick-list button { width: 100%; display: flex; justify-content: space-between; gap: 10px; text-align: left; padding: 10px;
+      background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: 10px; margin-bottom: 6px;
+      color: #e2e8f0; font-family: inherit; font-size: 0.85rem; cursor: pointer; }
+    .pick-list button small { color: var(--text-muted); white-space: nowrap; }
     .g-edit { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 7px;
       border: 1px solid var(--card-border); color: var(--text-muted); font-size: 0.8rem; margin-left: 8px; flex-shrink: 0; }
     .btn-devolver { border: 1px solid rgba(16, 185, 129, 0.5); background: rgba(16, 185, 129, 0.14); color: #a7f3d0; }
@@ -768,6 +779,17 @@
           <input type="number" id="mMin" min="0" inputmode="numeric">
         </div>
       </div>
+
+      <div style="display:flex; gap:8px; align-items:flex-end;">
+        <div class="fg" style="flex:1;">
+          <label for="mOwner">Propietario</label>
+          <select id="mOwner" onchange="document.getElementById('mCategory').dataset.owner = this.value"></select>
+        </div>
+        <div class="fg" style="flex:1;" id="fgRet">
+          <label class="check" style="margin:0 0 10px;"><input type="checkbox" id="mRet"> Se presta y se devuelve</label>
+        </div>
+      </div>
+      <p class="hint" id="retHint" style="margin-top:-6px;">Márcalo en herramientas y equipos (escaleras, fusionadoras...): quedan apuntados a quien los tiene hasta que los devuelve.</p>
 
       <div style="display:flex; gap:8px;" id="fgSueltas">
         <div class="fg" style="flex:1;">
@@ -889,6 +911,18 @@
       <div class="modal-btns">
         <button class="m-btn m-cancel" onclick="closeM('limpiarModal')">Cerrar</button>
         <button class="m-btn m-del" id="limpiarBtn" onclick="doLimpiar()">Borrar marcados</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal dar material a una furgoneta -->
+  <div id="pickModal" class="modal-backdrop" onclick="if (event.target === this) closeM('pickModal')">
+    <div class="modal-sheet">
+      <h2 id="pickTitle">➕ Darle material</h2>
+      <input type="text" id="pickSearch" class="search-box" placeholder="🔍 Buscar material del almacén..." oninput="renderPicker()">
+      <div id="pickList" class="pick-list"></div>
+      <div class="modal-btns">
+        <button class="m-btn m-cancel" onclick="closeM('pickModal')">Cerrar</button>
       </div>
     </div>
   </div>
@@ -1173,7 +1207,9 @@
     let owners = [], items = [], movs = [], furgos = [], personas = [], familias = [];
     let movsAll = [];               // todos los movimientos, incluidos los anulados (movs = solo los válidos)
     let ultimoRefresco = Date.now();
-    let verQuien = "personas";      // vista de la pestaña Quién tiene qué
+    let verQuien = "personas";      // la pestaña Personas
+    let filtroOwner = "all";        // filtro de propietario en el almacén principal
+    let pickDestino = "";
     let currentTab = "inicio";      // "inicio", propietario, "furgonetas" o "reponer"
     const DIAS_ALERTA_BOBINA = 15;  // a partir de cuántos días fuera se marca una bobina en rojo
     let searchQuery = "";
@@ -1204,7 +1240,7 @@
 
     function mapItem(r) {
       return { id: r.id, name: r.name, owner: r.owner, cat: r.cat, unit: r.unit, qty: r.qty, min: r.min,
-        metros: r.metros, sueltas: r.sueltas, porCaja: r.por_caja, fuera: r.fuera || {} };
+        metros: r.metros, sueltas: r.sueltas, porCaja: r.por_caja, fuera: r.fuera || {}, retornable: !!r.retornable };
     }
     function mapMov(r) {
       return { dbId: r.id, t: new Date(r.t).getTime(), id: r.item_id, name: r.name, owner: r.owner, unit: r.unit,
@@ -1335,6 +1371,18 @@
     }
     function unidadPlural(u) { return unidadTxt(u, 2); }
     function fmtM(n) { return Number(n || 0).toLocaleString("es-ES") + " m"; }
+    function esRetornable(i) { return !!i && (i.unit === "bobina" || !!i.retornable); }
+    function esRetornableId(id) { return esRetornable(items.find(i => i.id === id)); }
+    function ownerActual() { return filtroOwner === "all" ? "propio" : filtroOwner; }
+    function todasFamilias() {
+      if (familias.length) return [...familias].sort((a, b) =>
+        (a.grupo === b.grupo ? 0 : (a.grupo === "consumible" ? -1 : 1)) || a.orden - b.orden || a.label.localeCompare(b.label));
+      return [...CAT_CONSUMIBLES, ...CAT_OPERADORA];
+    }
+    function opcionesFamilias() {
+      return todasFamilias().map(c => `<option value="${c.key}">${c.label}</option>`).join("") + `<option value="__nueva">➕ Nueva familia…</option>`;
+    }
+
     function grupoDe(owner) { return owner === "propio" ? "consumible" : "operadora"; }
     function catsFor(owner) {
       const g = grupoDe(owner);
@@ -1418,9 +1466,9 @@
 
     function renderMovStats() {
       const el = document.getElementById("movStats");
-      if (currentTab === "reponer" || currentTab === "furgonetas" || currentTab === "inicio") { el.style.display = "none"; return; }
+      if (currentTab !== "almacen") { el.style.display = "none"; return; }
       el.style.display = "flex";
-      const cuenta = g => movs.filter(m => m.owner === currentTab && GRUPOS_MOV[g].tipos.includes(m.tipo)).length;
+      const cuenta = g => movs.filter(m => (filtroOwner === "all" || m.owner === filtroOwner) && GRUPOS_MOV[g].tipos.includes(m.tipo)).length;
       el.innerHTML = `
         <button type="button" class="mov-pill mov-in" onclick="openMovModal('entrada')">🔺 Entradas: ${cuenta("entrada")}</button>
         <button type="button" class="mov-pill mov-out" onclick="openMovModal('salida')">🔻 Salidas: ${cuenta("salida")}</button>
@@ -1472,8 +1520,8 @@
     function openMovModal(grupo) {
       const g = GRUPOS_MOV[grupo];
       document.getElementById("movModalTitle").textContent = g.titulo;
-      document.getElementById("movModalOwner").textContent = ownerName(currentTab);
-      const filas = movs.filter(m => m.owner === currentTab && g.tipos.includes(m.tipo));
+      document.getElementById("movModalOwner").textContent = filtroOwner === "all" ? "Todo el almacén" : ownerName(filtroOwner);
+      const filas = movsAll.filter(m => (filtroOwner === "all" || m.owner === filtroOwner) && g.tipos.includes(m.tipo));
       const tbody = document.getElementById("movTableBody");
       tbody.innerHTML = filas.length === 0
         ? `<tr><td colspan="3" style="text-align:center; padding:18px; color:var(--text-muted);">Todavía no hay movimientos de este tipo.</td></tr>`
@@ -1495,32 +1543,25 @@
     function renderTabs() {
       const bar = document.getElementById("ownerTabsBar");
       bar.innerHTML = "";
-      const ini = tabBtn("🏠 Inicio", null, currentTab === "inicio", "", () => selectTab("inicio"));
-      ini.style.paddingRight = "12px";
-      bar.appendChild(ini);
-      const addFurgosTab = () => {
-        const f = tabBtn("👷 Quién tiene qué", null, currentTab === "furgonetas", "tab-furgos", () => selectTab("furgonetas"));
-        f.style.paddingRight = "12px";
-        bar.appendChild(f);
-      };
-      owners.forEach(o => {
-        const btn = tabBtn(o.name, items.filter(i => i.owner === o.key).length, currentTab === o.key, "", () => selectTab(o.key));
-        if (!o.fixed) {
-          const ed = document.createElement("span");
-          ed.className = "van-edit";
-          ed.textContent = "✎";
-          ed.title = "Renombrar o eliminar";
-          ed.addEventListener("click", ev => { ev.stopPropagation(); editOwner(o.key); });
-          btn.appendChild(ed);
-        } else btn.style.paddingRight = "12px";
+      const pon = btn => { btn.style.paddingRight = "12px"; bar.appendChild(btn); };
+      pon(tabBtn("🏠 Inicio", null, currentTab === "inicio", "", () => selectTab("inicio")));
+      pon(tabBtn("🏬 Almacén", items.length, currentTab === "almacen", "", () => selectTab("almacen")));
+      furgos.forEach(f => {
+        const claves = [f.key, ...personas.filter(p => p.furgo === f.key).map(p => p.key)];
+        const n = bobinasDe(claves).reduce((a, b) => a + b.n, 0);
+        const key = "furgo:" + f.key;
+        const btn = tabBtn("🚐 " + f.name, n, currentTab === key, "tab-furgos", () => selectTab(key));
+        const ed = document.createElement("span");
+        ed.className = "van-edit";
+        ed.textContent = "✎";
+        ed.title = "Renombrar";
+        ed.addEventListener("click", ev => { ev.stopPropagation(); editFurgo(f.key); });
+        btn.appendChild(ed);
         bar.appendChild(btn);
-        if (o.key === "propio") addFurgosTab();
       });
-      const r = tabBtn("⚠️ Reponer", items.filter(isLow).length, currentTab === "reponer", "tab-reponer", () => selectTab("reponer"));
-      r.style.paddingRight = "12px";
-      bar.appendChild(r);
-      const add = tabBtn("+ Operadora", null, false, "tab-add", addOwner);
-      bar.appendChild(add);
+      bar.appendChild(tabBtn("+ Furgoneta", null, false, "tab-add", addFurgo));
+      pon(tabBtn("👷 Personas", personas.length, currentTab === "furgonetas", "tab-furgos", () => selectTab("furgonetas")));
+      pon(tabBtn("⚠️ Reponer", items.filter(isLow).length, currentTab === "reponer", "tab-reponer", () => selectTab("reponer")));
       const act = bar.querySelector(".active");
       if (act) act.scrollIntoView({ inline: "nearest", block: "nearest" });
     }
@@ -1571,7 +1612,8 @@
     }
 
     function bottomAction() {
-      if (currentTab === "furgonetas") { if (verQuien === "personas") openPersonaModal(); else addFurgo(); }
+      if (currentTab === "furgonetas") openPersonaModal();
+      else if (currentTab.startsWith("furgo:")) openPicker(currentTab.slice(6));
       else openAddModal();
     }
 
@@ -1582,7 +1624,9 @@
       badge.textContent = `⚠️ ${low}`;
       badge.title = `${low} materiales por reponer`;
 
-      const label = currentTab === "inicio" ? "Inicio" : currentTab === "reponer" ? "Reponer" : currentTab === "furgonetas" ? "Quién tiene qué" : ownerName(currentTab);
+      const fk = currentTab.startsWith("furgo:") ? currentTab.slice(6) : null;
+      const label = currentTab === "inicio" ? "Inicio" : currentTab === "reponer" ? "Reponer" : currentTab === "furgonetas" ? "Personas"
+        : fk ? furgoName(fk) : "Almacén principal";
       document.getElementById("searchInput").style.display = currentTab === "inicio" ? "none" : "block";
       document.getElementById("tabLabel").textContent = label;
       document.title = `Stock Motril Almacén - ${label}`;
@@ -1593,8 +1637,7 @@
       const bottomBar = document.getElementById("bottomBar");
       const addBtn = document.getElementById("btnAddBottom");
       bottomBar.style.display = currentTab === "inicio" || currentTab === "reponer" || !puedeMover() || false ? "none" : "flex";
-      addBtn.textContent = currentTab === "furgonetas" ? (verQuien === "personas" ? "➕ Añadir persona" : "➕ Añadir furgoneta")
-        : currentTab === "propio" ? "➕ Añadir consumible" : `➕ Añadir material de ${ownerName(currentTab)}`;
+      addBtn.textContent = currentTab === "furgonetas" ? "➕ Añadir persona" : fk ? `➕ Darle material a ${furgoName(fk)}` : "➕ Añadir material";
 
       const container = document.getElementById("itemsContainer");
       container.innerHTML = "";
@@ -1602,24 +1645,38 @@
       if (currentTab === "inicio") return renderInicio(container);
       if (currentTab === "reponer") return renderReponer(container);
       if (currentTab === "furgonetas") return renderQuien(container);
+      if (fk) return renderFurgoTab(container, fk);
 
-      const delOwner = items.filter(i => i.owner === currentTab);
+      // Filtro por propietario y herramientas del catálogo
+      const tbF = document.createElement("div");
+      tbF.className = "filtro-row";
+      tbF.innerHTML = `<select id="filtroOwnerSel" aria-label="Propietario">
+          <option value="all">📦 Todo el almacén</option>
+          ${owners.map(o => `<option value="${o.key}">${esc(o.name)}</option>`).join("")}
+        </select>
+        ${filtroOwner !== "all" && filtroOwner !== "propio" ? `<button type="button" class="export-btn export-inv btn-limpiar" data-a="editop">✎</button>` : ""}
+        <button type="button" class="export-btn export-inv btn-limpiar" data-a="addop">+ Operadora</button>
+        ${!searchQuery ? `<button type="button" class="export-btn export-inv btn-limpiar" data-a="limpiar">🧹 Limpiar</button>
+        <button type="button" class="export-btn export-inv btn-limpiar" data-a="familia">➕ Familia</button>` : ""}`;
+      const selF = tbF.querySelector("select");
+      selF.value = filtroOwner;
+      selF.addEventListener("change", () => { filtroOwner = selF.value; render(); });
+      tbF.querySelectorAll("[data-a]").forEach(b => b.addEventListener("click", () => {
+        const a = b.dataset.a;
+        if (a === "editop") editOwner(filtroOwner);
+        else if (a === "addop") addOwner();
+        else if (a === "limpiar") openLimpiar();
+        else if (a === "familia") nuevaFamilia(ownerActual());
+      }));
+      container.appendChild(tbF);
+
+      const delOwner = items.filter(i => filtroOwner === "all" || i.owner === filtroOwner);
       const lista = delOwner.filter(i => i.name.toLowerCase().includes(searchQuery));
-      if (lista.length === 0) {
+      if (lista.length === 0 && (searchQuery || !familias.length)) {
         container.appendChild(emptyMsg(searchQuery ? "Ningún material coincide con la búsqueda." : `No hay materiales aquí. Pulsa "${addBtn.textContent}" para crear uno.`));
         return;
       }
-      if (puedeMover() && !searchQuery) {
-        const tb = document.createElement("div");
-        tb.className = "reponer-toolbar btn-limpiar";
-        tb.innerHTML = `<button type="button" class="export-btn export-inv">🧹 Limpiar catálogo</button>
-          <button type="button" class="export-btn export-inv">➕ Nueva familia</button>`;
-        const [bL, bF] = tb.querySelectorAll("button");
-        bL.addEventListener("click", () => openLimpiar(currentTab));
-        bF.addEventListener("click", () => nuevaFamilia(currentTab));
-        container.appendChild(tb);
-      }
-      const cats = [...catsFor(currentTab)];
+      const cats = [...todasFamilias()];
       lista.forEach(i => { if (!cats.some(c => c.key === i.cat)) cats.push({ key: i.cat, label: nombreCategoria(i.cat) }); });
       cats.forEach(c => {
         const deGrupo = lista.filter(i => i.cat === c.key);
@@ -1628,10 +1685,10 @@
         const gKey = `${currentTab}:${c.key}`;
         const lowG = deGrupo.filter(isLow).length;
         const meta = `${deGrupo.length}${lowG ? ` <span class="g-low">⚠️ ${lowG}</span>` : ""}`;
-        const ownerTab = currentTab;
+        const ownerTab = ownerActual();
         container.appendChild(makeGroup(gKey, c.label, meta, body => {
             if (!deGrupo.length) { const v = emptyMsg("Familia vacía. Crea un material o edita uno existente y elige esta familia."); v.style.padding = "12px"; body.appendChild(v); }
-            deGrupo.forEach(i => body.appendChild(createItemCard(i, false)));
+            deGrupo.forEach(i => body.appendChild(createItemCard(i, filtroOwner === "all" && i.owner !== "propio")));
           },
           familias.some(fm => fm.key === c.key) ? () => editFamilia(c.key, ownerTab) : null));
       });
@@ -1691,27 +1748,79 @@
     }
 
     function htmlQuienTiene(bobinas, filas) {
-      let html = "<h3>Bobinas que tiene ahora</h3>";
+      let html = "<h3>Lo que tiene ahora (bobinas y material que se devuelve)</h3>";
       html += bobinas.length
-        ? "<ul>" + bobinas.map(b => `<li><span>${esc(b.item.name)} <span class="owner-tag">${esc(ownerName(b.item.owner))}</span>${b.quien ? ` <span class="mov-user">${esc(b.quien)}</span>` : ""}</span><b>${b.n} ${unidadTxt("bobina", b.n)}</b></li>`).join("") + "</ul>"
-        : `<p class="hint">Ninguna.</p>`;
-      html += "<h3>Total asignado (descontando devoluciones)</h3>";
+        ? "<ul>" + bobinas.map(b => `<li><span>${esc(b.item.name)}${esBobina(b.item) ? ` <span class="metros-line">${fmtM(b.item.metros)}</span>` : ""}${b.quien ? ` <span class="mov-user">${esc(b.quien)}</span>` : ""}</span><b>${b.n} ${unidadTxt(b.item.unit, b.n)}</b></li>`).join("") + "</ul>"
+        : `<p class="hint">Nada pendiente de devolver.</p>`;
+      html += "<h3>Consumibles entregados (descontando devoluciones)</h3>";
       html += filas.length
         ? "<ul>" + filas.map(r => `<li><span>${esc(r.name)} <span class="owner-tag">${esc(ownerName(r.owner))}</span></span><b>${r.cant} ${r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant)}</b></li>`).join("") + "</ul>"
         : `<p class="hint">Todavía no se le ha asignado material.</p>`;
       return html;
     }
 
-    function renderQuien(container) {
-      const tb = document.createElement("div");
-      tb.className = "reponer-toolbar";
-      tb.innerHTML = `
-        <button type="button" class="export-btn ${verQuien === "personas" ? "export-sheets" : "export-inv"}" data-v="personas">👷 Por persona</button>
-        <button type="button" class="export-btn ${verQuien === "furgos" ? "export-sheets" : "export-inv"}" data-v="furgos">🚐 Por furgoneta</button>`;
-      tb.querySelectorAll("[data-v]").forEach(b => b.addEventListener("click", () => { verQuien = b.dataset.v; render(); }));
-      container.appendChild(tb);
+    function renderFurgoTab(container, fk) {
+      const f = furgos.find(x => x.key === fk);
+      if (!f) { container.appendChild(emptyMsg("Esta furgoneta ya no existe.")); return; }
+      const suyas = personas.filter(p => p.furgo === fk);
+      const claves = [fk, ...suyas.map(p => p.key)];
+      const tiene = bobinasDe(claves).filter(b => b.item.name.toLowerCase().includes(searchQuery))
+        .map(b => ({ ...b, dias: diasFuera(b.item, b.key) })).sort((a, b) => b.dias - a.dias);
+      const dash = document.createElement("div");
+      dash.className = "dash";
+      let html = `<div class="dash-box"><h3>👷 Personas de esta furgoneta</h3>${suyas.length
+        ? `<p class="hint">${suyas.map(p => esc(p.name)).join(", ")}</p>`
+        : `<p class="hint">Sin personas. Puedes asignarles esta furgoneta en 👷 Personas.</p>`}</div>`;
+      html += `<div class="dash-box"><h3>📦 Lo que tiene ahora <small>pendiente de devolver</small></h3>`;
+      html += tiene.length ? `<ul class="dash-list">${tiene.map((b, k) => {
+        const quien = b.key === fk ? "" : `La tiene ${esc(holderName(b.key))}. `;
+        const dias = b.dias ? `${b.dias} ${b.dias === 1 ? "día" : "días"} fuera` : "Salió hoy";
+        const met = esBobina(b.item) ? `<span class="sub metros-line">${fmtM(b.item.metros)}${(b.item.qty + fueraTotal(b.item)) > 1 ? " entre todas las bobinas de este cable" : ""}</span>` : "";
+        const btn = puedeMover() ? `<button type="button" class="btn-wide ${esBobina(b.item) ? "btn-metros" : "btn-devolver"}" data-dev="${k}">${esBobina(b.item) ? "📏 Devolver" : "↩️ Devolver"}</button>` : "";
+        return `<li><span>${esc(b.item.name)}${b.item.owner !== "propio" ? ` <span class="owner-tag">${esc(ownerName(b.item.owner))}</span>` : ""}<span class="sub">${quien}${dias}</span>${met}</span>
+          <span class="li-acc"><b class="${b.dias >= DIAS_ALERTA_BOBINA ? "dias-alerta" : ""}">${b.n} ${unidadTxt(b.item.unit, b.n)}</b>${btn}</span></li>`;
+      }).join("")}</ul>` : `<p class="hint">No tiene nada pendiente de devolver.</p>`;
+      html += `</div>`;
+      const mes = mesKey(Date.now());
+      const cons = resumenAsignado(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && m.destinoKey === fk
+        && mesKey(m.t) === mes && !esRetornableId(m.id)));
+      html += `<div class="dash-box"><h3>🧰 Consumibles entregados en ${mesLabel(mes)} <small>no hace falta devolverlos</small></h3>${cons.length
+        ? `<ul class="dash-list">${cons.map(r => `<li><span>${esc(r.name)}${r.owner !== "propio" ? ` <span class="owner-tag">${esc(ownerName(r.owner))}</span>` : ""}</span><b>${r.cant} ${r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant)}</b></li>`).join("")}</ul>`
+        : `<p class="hint">Nada este mes.</p>`}</div>`;
+      dash.innerHTML = html;
+      dash.querySelectorAll("[data-dev]").forEach(btn => btn.addEventListener("click", () => {
+        const b = tiene[Number(btn.dataset.dev)];
+        if (esBobina(b.item)) openMetros(b.item.id, b.key);
+        else openAsignar(b.item.id, "devolver", b.key);
+      }));
+      container.appendChild(dash);
+    }
 
-      const asignaciones = movs.filter(m => m.tipo === "asignacion" || m.tipo === "devolucion");
+    function openPicker(fk) {
+      pickDestino = fk;
+      document.getElementById("pickTitle").textContent = `➕ Darle material a ${furgoName(fk)}`;
+      document.getElementById("pickSearch").value = "";
+      renderPicker();
+      openM("pickModal");
+    }
+
+    function renderPicker() {
+      const q = document.getElementById("pickSearch").value.toLowerCase().trim();
+      const lista = items.filter(i => (i.qty > 0 || (esCaja(i) && i.sueltas > 0)) && i.name.toLowerCase().includes(q))
+        .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 80);
+      const cont = document.getElementById("pickList");
+      cont.innerHTML = lista.length ? lista.map(i => `<button type="button" data-id="${esc(i.id)}"><span>${esc(i.name)}${i.owner !== "propio" ? ` <span class="owner-tag">${esc(ownerName(i.owner))}</span>` : ""}</span>
+          <small>${i.qty} ${unidadTxt(i.unit, i.qty)}${esCaja(i) && i.sueltas ? ` + ${i.sueltas} sueltas` : ""}${esBobina(i) ? `, ${fmtM(i.metros)}` : ""}</small></button>`).join("")
+        : `<p class="hint">No hay material con stock que coincida.</p>`;
+      cont.querySelectorAll("[data-id]").forEach(b => b.addEventListener("click", () => {
+        closeM("pickModal");
+        openAsignar(b.dataset.id, "entregar", pickDestino);
+      }));
+    }
+
+    function renderQuien(container) {
+      verQuien = "personas";
+      const asignaciones = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && !esRetornableId(m.id));
 
       if (verQuien === "personas") {
         if (!personas.length) {
@@ -1721,7 +1830,7 @@
         personas.filter(p => p.name.toLowerCase().includes(searchQuery)).forEach(p => {
           const bobinas = items.filter(i => (i.fuera || {})[p.key] > 0).map(i => ({ item: i, n: i.fuera[p.key] }));
           const nBob = bobinas.reduce((a, b) => a + b.n, 0);
-          const meta = `${p.furgo ? `<span>🚐 ${esc(furgoName(p.furgo))}</span>` : ""}${nBob ? `<span style="color:#d8b4fe">${nBob} ${unidadTxt("bobina", nBob)}</span>` : ""}`;
+          const meta = `${p.furgo ? `<span>🚐 ${esc(furgoName(p.furgo))}</span>` : ""}${nBob ? `<span style="color:#d8b4fe">${nBob} fuera</span>` : ""}`;
           container.appendChild(makeGroup(`p:${p.key}`, `👷 ${esc(p.name)}`, meta, body => {
             const tools = document.createElement("div");
             tools.className = "group-tools tools-persona";
@@ -1822,7 +1931,7 @@
         ${kpi(conStock, "Materiales con stock", `de ${items.length} en catálogo`, "k-green", "")}
         ${kpi(bajos.length, "Bajo mínimo", "toca para ver la lista", bajos.length ? "k-amber" : "", "reponer")}
         ${kpi(agotados.length, "Agotados", "", agotados.length ? "k-red" : "", "")}
-        ${kpi(nFuera, `${unidadTxt("bobina", nFuera)} fuera`, atrasadas.length ? `⏰ ${atrasadas.length} con más de ${DIAS_ALERTA_BOBINA} días` : "en personas y furgonetas", atrasadas.length ? "k-red" : "k-purple", "furgonetas")}
+        ${kpi(nFuera, "fuera del almacén", atrasadas.length ? `⏰ ${atrasadas.length} con más de ${DIAS_ALERTA_BOBINA} días` : "bobinas y material prestado", atrasadas.length ? "k-red" : "k-purple", "furgonetas")}
       </div>`;
 
       // Alertas
@@ -1857,12 +1966,12 @@
         : `<p class="hint">Todavía no hay asignaciones este mes.</p>`}</div>`;
 
       // Cable por operadora
-      const filasOp = owners.filter(o => o.key !== "propio").map(o => {
+      const filasOp = owners.map(o => {
         const bob = items.filter(i => i.owner === o.key && esBobina(i));
         return { o, enAlm: bob.reduce((a, i) => a + i.qty, 0), fuera: bob.reduce((a, i) => a + fueraTotal(i), 0), metros: bob.reduce((a, i) => a + i.metros, 0) };
       }).filter(r => r.enAlm || r.fuera || r.metros);
-      html += `<div class="dash-box"><h3>🎡 Cable por operadora</h3>${filasOp.length
-        ? `<ul class="dash-list">${filasOp.map(r => `<li class="clic" data-ir="${r.o.key}"><span>${esc(r.o.name)}<span class="sub">${r.enAlm} en almacén, ${r.fuera} fuera</span></span><b>${fmtM(r.metros)}</b></li>`).join("")}</ul>`
+      html += `<div class="dash-box"><h3>🎡 Cable por propietario</h3>${filasOp.length
+        ? `<ul class="dash-list">${filasOp.map(r => `<li class="clic" data-op="${r.o.key}"><span>${esc(r.o.name)}<span class="sub">${r.enAlm} en almacén, ${r.fuera} fuera</span></span><b>${fmtM(r.metros)}</b></li>`).join("")}</ul>`
         : `<p class="hint">Todavía no hay bobinas registradas.</p>`}</div>`;
 
       // Agotados
@@ -1880,6 +1989,7 @@
 
       dash.innerHTML = html;
       dash.querySelectorAll("[data-ir]").forEach(el => el.addEventListener("click", () => { if (el.dataset.ir) selectTab(el.dataset.ir); }));
+      dash.querySelectorAll("[data-op]").forEach(el => el.addEventListener("click", () => { filtroOwner = el.dataset.op; selectTab("almacen"); }));
       dash.querySelectorAll("[data-hist]").forEach(el => el.addEventListener("click", () => openHist(el.dataset.hist)));
       container.appendChild(dash);
     }
@@ -1933,6 +2043,7 @@
             <div class="item-meta">
               ${showOwner ? `<span class="owner-tag">${esc(ownerName(item.owner))}</span>` : ""}
               <span>Mín: ${item.min}</span>
+              ${item.retornable && !bob ? '<span class="ret-tag">🔁 Se devuelve</span>' : ""}
               ${bob ? `<span class="metros-line">${fmtM(item.metros)} en total</span>` : ""}
               ${low ? '<span class="reponer-tag">⚠️ REPONER</span>' : ""}
             </div>
@@ -1970,7 +2081,7 @@
     }
 
     // ================== ASIGNAR ==================
-    function openAsignar(id, modo) {
+    function openAsignar(id, modo, preset) {
       const item = items.find(i => i.id === id);
       if (!item) return;
       const dev = modo === "devolver";
@@ -1987,6 +2098,12 @@
       document.getElementById("aFurgo").innerHTML =
         (personas.length ? `<optgroup label="Personas">${personas.map(p => `<option value="${p.key}">${esc(personaLabel(p))}</option>`).join("")}</optgroup>` : "") +
         `<optgroup label="Furgoneta, sin persona">${furgos.map(f => `<option value="${f.key}">${esc(f.name)}</option>`).join("")}</optgroup>`;
+      if (dev && esRetornable(item)) {
+        const tienen = Object.entries(item.fuera || {}).filter(([, n]) => n > 0);
+        if (!tienen.length) return alert(`Nadie tiene ${item.name} apuntado. Si entra material nuevo, usa el botón +.`);
+        document.getElementById("aFurgo").innerHTML = tienen.map(([k, n]) => `<option value="${k}">${esc(holderName(k))} (tiene ${n})</option>`).join("");
+      }
+      if (preset && [...document.getElementById("aFurgo").options].some(o => o.value === preset)) document.getElementById("aFurgo").value = preset;
       document.getElementById("aQty").value = "1";
       updateAsignLabel();
       openM("asignModal");
@@ -1998,7 +2115,13 @@
       const suelta = esCaja(item) && document.getElementById("aUnit").value === "suelta";
       document.getElementById("aQtyLabel").textContent = `Cantidad (${suelta ? "unidades sueltas" : unidadPlural(item.unit)})`;
       if (document.getElementById("asignModo").value === "devolver") {
-        document.getElementById("asignHint").textContent = "Se suma al almacén y se descuenta de lo que tiene asignado esa persona o furgoneta.";
+        document.getElementById("asignHint").textContent = esRetornable(item)
+          ? "Vuelve al almacén y deja de estar apuntado a esa persona o furgoneta."
+          : "Se suma al almacén y se descuenta de lo que se le había entregado a esa persona o furgoneta.";
+        return;
+      }
+      if (item.retornable && !suelta) {
+        document.getElementById("asignHint").textContent = "Queda apuntado a quien lo recibe hasta que lo devuelva.";
         return;
       }
       if (suelta) document.getElementById("asignHint").textContent = item.porCaja
@@ -2024,7 +2147,7 @@
     }
 
     // ================== METROS DE BOBINA ==================
-    function openMetros(id) {
+    function openMetros(id, preset) {
       const item = items.find(i => i.id === id);
       if (!item) return;
       document.getElementById("metrosId").value = id;
@@ -2034,6 +2157,7 @@
       if (item.qty > 0) opts.push(`<option value="">Estaba en el almacén</option>`);
       if (!opts.length) return alert("No hay bobinas de este cable ni en el almacén ni asignadas.");
       document.getElementById("mtOrigen").innerHTML = opts.join("");
+      if (preset && opts.some(o => o.includes(`value="${preset}"`))) document.getElementById("mtOrigen").value = preset;
       document.getElementById("mtMetros").value = "";
       document.getElementById("mtTerminada").checked = false;
       openM("metrosModal");
@@ -2120,9 +2244,11 @@
 
     // ================== MODAL MATERIAL ==================
     function fillSelects(owner) {
-      document.getElementById("mCategory").innerHTML = catsFor(owner).map(c => `<option value="${c.key}">${c.label}</option>`).join("") +
-        `<option value="__nueva">➕ Nueva familia…</option>`;
-      document.getElementById("mCategory").dataset.owner = owner;
+      const sel = document.getElementById("mCategory");
+      sel.innerHTML = opcionesFamilias();
+      sel.dataset.owner = owner;
+      document.getElementById("mOwner").innerHTML = owners.map(o => `<option value="${o.key}">${esc(o.name)}</option>`).join("");
+      document.getElementById("mOwner").value = owner;
       document.getElementById("mUnit").innerHTML = UNIDADES.map(u => {
         const t = u.key === "metro" ? "Metros" : u.p.charAt(0).toUpperCase() + u.p.slice(1);
         return `<option value="${u.key}">${t}</option>`;
@@ -2133,14 +2259,16 @@
       if (sel.value !== "__nueva") { sel.dataset.prev = sel.value; return; }
       const owner = sel.dataset.owner;
       const key = await nuevaFamilia(owner);
-      const actual = sel.dataset.prev || catsFor(owner)[0].key;
-      sel.innerHTML = catsFor(owner).map(c => `<option value="${c.key}">${c.label}</option>`).join("") + `<option value="__nueva">➕ Nueva familia…</option>`;
+      const actual = sel.dataset.prev || todasFamilias()[0].key;
+      sel.innerHTML = opcionesFamilias();
       sel.value = key || actual;
       sel.dataset.prev = sel.value;
     }
 
     function toggleMetrosField() {
       const bob = document.getElementById("mUnit").value === "bobina";
+      document.getElementById("fgRet").style.visibility = bob ? "hidden" : "visible";
+      document.getElementById("retHint").style.display = bob ? "none" : "block";
       document.getElementById("fgMetros").style.display = bob ? "block" : "none";
       const caja = document.getElementById("mUnit").value === "caja";
       document.getElementById("fgSueltas").style.display = caja ? "flex" : "none";
@@ -2149,12 +2277,15 @@
     }
 
     function openAddModal() {
-      fillSelects(currentTab);
-      document.getElementById("modalTitle").textContent = currentTab === "propio" ? "Nuevo consumible" : `Nuevo material de ${ownerName(currentTab)}`;
+      const owner = ownerActual();
+      fillSelects(owner);
+      document.getElementById("modalTitle").textContent = "Nuevo material";
+      document.getElementById("mRet").checked = false;
       document.getElementById("editId").value = "";
       document.getElementById("mName").value = "";
-      document.getElementById("mCategory").value = catsFor(currentTab)[0].key;
-      document.getElementById("mUnit").value = currentTab === "propio" ? "caja" : "unidad";
+      document.getElementById("mCategory").value = todasFamilias()[0].key;
+      document.getElementById("mCategory").dataset.prev = todasFamilias()[0].key;
+      document.getElementById("mUnit").value = owner === "propio" ? "caja" : "unidad";
       document.getElementById("mQty").value = "0";
       document.getElementById("mMin").value = "0";
       document.getElementById("mMetros").value = "0";
@@ -2174,10 +2305,12 @@
       const item = items.find(i => i.id === id);
       if (!item) return;
       fillSelects(item.owner);
-      document.getElementById("modalTitle").textContent = `Editar material de ${ownerName(item.owner)}`;
+      document.getElementById("modalTitle").textContent = "Editar material";
+      document.getElementById("mRet").checked = !!item.retornable;
       document.getElementById("editId").value = item.id;
       document.getElementById("mName").value = item.name;
-      document.getElementById("mCategory").value = item.cat;
+      document.getElementById("mCategory").value = [...document.getElementById("mCategory").options].some(o => o.value === item.cat) ? item.cat : todasFamilias()[0].key;
+      document.getElementById("mCategory").dataset.prev = document.getElementById("mCategory").value;
       document.getElementById("mUnit").value = item.unit;
       document.getElementById("mQty").value = item.qty;
       document.getElementById("mMin").value = item.min;
@@ -2227,7 +2360,10 @@
       const sueltas = unit === "caja" ? Math.max(0, parseInt(document.getElementById("mSueltas").value, 10) || 0) : 0;
       const porCaja = unit === "caja" ? Math.max(0, parseInt(document.getElementById("mPorCaja").value, 10) || 0) : 0;
       const editId = document.getElementById("editId").value;
+      const owner = document.getElementById("mOwner").value || "propio";
+      const retornable = unit !== "bobina" && document.getElementById("mRet").checked;
       if (!name) return alert("Indica un nombre.");
+      if (cat === "__nueva") return alert("Elige una familia.");
 
       let id = editId;
       let hayAjuste;
@@ -2235,13 +2371,14 @@
         const item = items.find(i => i.id === editId);
         if (!item) return;
         if (item.unit === "bobina" && unit !== "bobina" && fueraTotal(item) > 0) return alert("Tiene bobinas fuera: no se puede cambiar la unidad hasta que vuelvan.");
-        if (!await consulta(sb.from("items").update({ name, cat, unit, min, por_caja: porCaja, updated_at: new Date().toISOString() }).eq("id", editId))) return;
+        if (item.retornable && !retornable && fueraTotal(item) > 0) return alert("Hay unidades prestadas: no se puede desmarcar \"Se presta y se devuelve\" hasta que vuelvan.");
+        if (!await consulta(sb.from("items").update({ name, cat, unit, min, por_caja: porCaja, owner, retornable, updated_at: new Date().toISOString() }).eq("id", editId))) return;
         hayAjuste = qty !== editOrigQty || (unit === "caja" && sueltas !== editOrigSueltas) || (unit === "bobina" && metros !== editOrigMetros);
       } else {
-        id = uid(currentTab === "propio" ? "c" : currentTab);
-        if (!await consulta(sb.from("items").insert({ id, name, owner: currentTab, cat, unit, min, por_caja: porCaja }))) return;
+        id = uid(owner === "propio" ? "c" : owner);
+        if (!await consulta(sb.from("items").insert({ id, name, owner, cat, unit, min, por_caja: porCaja, retornable }))) return;
         hayAjuste = qty > 0 || sueltas > 0 || metros > 0;
-        openGroups.add(`${currentTab}:${cat}`);
+        openGroups.add(`almacen:${cat}`);
       }
       if (hayAjuste) {
         const actual = items.find(i => i.id === id);
@@ -2273,16 +2410,16 @@
     }
 
     // ================== LIMPIAR CATÁLOGO ==================
-    function openLimpiar(owner) {
-      const lista = items.filter(i => i.owner === owner && sinUso(i));
-      document.getElementById("limpiarSub").textContent = `${ownerName(owner)}: ${lista.length} materiales sin stock ni movimientos.`;
+    function openLimpiar() {
+      const lista = items.filter(i => (filtroOwner === "all" || i.owner === filtroOwner) && sinUso(i));
+      document.getElementById("limpiarSub").textContent = `${filtroOwner === "all" ? "Todo el almacén" : ownerName(filtroOwner)}: ${lista.length} materiales sin stock ni movimientos.`;
       document.getElementById("limpiarTodos").checked = false;
-      const cats = [...catsFor(owner)];
+      const cats = [...todasFamilias()];
       lista.forEach(i => { if (!cats.some(c => c.key === i.cat)) cats.push({ key: i.cat, label: nombreCategoria(i.cat) }); });
       document.getElementById("limpiarList").innerHTML = lista.length ? cats.map(c => {
         const deC = lista.filter(i => i.cat === c.key);
         if (!deC.length) return "";
-        return `<h4>${esc(sinEmoji(c.label))}</h4>` + deC.map(i => `<label><input type="checkbox" value="${esc(i.id)}" onchange="contarLimpiar()"> ${esc(i.name)}</label>`).join("");
+        return `<h4>${esc(sinEmoji(c.label))}</h4>` + deC.map(i => `<label><input type="checkbox" value="${esc(i.id)}" onchange="contarLimpiar()"> ${esc(i.name)}${i.owner !== "propio" ? ` <span class="owner-tag">${esc(ownerName(i.owner))}</span>` : ""}</label>`).join("");
       }).join("") : `<p class="hint">No hay nada que limpiar aquí.</p>`;
       contarLimpiar();
       openM("limpiarModal");
@@ -2350,7 +2487,8 @@
     };
 
     function openExport(tipo) {
-      const t = tipo || (currentTab === "reponer" ? "reponer" : currentTab === "furgonetas" ? (verQuien === "personas" ? "persona" : "vehiculo") : "inventario");
+      const fkE = currentTab.startsWith("furgo:") ? currentTab.slice(6) : null;
+      const t = tipo || (currentTab === "reponer" ? "reponer" : currentTab === "furgonetas" ? "persona" : fkE ? "vehiculo" : "inventario");
       document.getElementById("exTipo").value = t;
       const meses = new Set(movs.map(m => mesKey(m.t)));
       meses.add(mesKey(Date.now()));
@@ -2358,8 +2496,9 @@
         .map(k => `<option value="${k}">${mesLabel(k)}</option>`).join("") + `<option value="all">Todo el historial</option>`;
       document.getElementById("exOwner").innerHTML = `<option value="all">Todos</option>` +
         owners.map(o => `<option value="${o.key}">${esc(o.name)}</option>`).join("");
-      if (owners.some(o => o.key === currentTab)) document.getElementById("exOwner").value = currentTab;
+      if (currentTab === "almacen" && filtroOwner !== "all") document.getElementById("exOwner").value = filtroOwner;
       updateExportForm();
+      if (fkE && t === "vehiculo") document.getElementById("exFurgo").value = fkE;
       openM("exportModal");
     }
 
@@ -2443,12 +2582,12 @@
           const suyas = esP ? [] : personas.filter(p => p.furgo === sj.key);
           const claves = esP ? [sj.key] : [sj.key, ...suyas.map(p => p.key)];
           const bob = bobinasDe(claves);
-          const entregas = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && okMes(m.t) && (esP ? m.personaKey === sj.key : m.destinoKey === sj.key));
+          const entregas = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && !esRetornableId(m.id) && okMes(m.t) && (esP ? m.personaKey === sj.key : m.destinoKey === sj.key));
           const agg = resumenAsignado(entregas);
           const col1 = sj.name;
           const col2 = esP ? (sj.furgo ? furgoName(sj.furgo) : "Sin furgoneta") : (suyas.map(p => p.name).join(", ") || "Sin personas");
           const filasS = [];
-          bob.forEach(b => filasS.push([b.item.name + (!esP && b.key !== sj.key ? ` (la tiene ${holderName(b.key)})` : ""), ownerName(b.item.owner), b.n, unidadTxt("bobina", b.n), "Bobina que tiene ahora"]));
+          bob.forEach(b => filasS.push([b.item.name + (esBobina(b.item) ? `, ${fmtM(b.item.metros)}` : "") + (!esP && b.key !== sj.key ? ` (la tiene ${holderName(b.key)})` : ""), ownerName(b.item.owner), b.n, unidadTxt(b.item.unit, b.n), "Lo tiene ahora"]));
           agg.forEach(r => filasS.push([r.name, ownerName(r.owner), r.cant, r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant), `Entregado neto (${periodoTxt})`]));
           filasS.forEach(f => rows.push([col1, col2, ...f]));
           totBob += bob.reduce((a, b) => a + b.n, 0);
@@ -2462,7 +2601,7 @@
             vacio: `Sin bobinas ni entregas en ${periodoTxt}.`
           });
         });
-        resumen = [[esP ? "Personas" : "Vehículos", sujetos.length], ["Bobinas que tienen ahora", totBob], ["Entregas en el periodo", totEnt]];
+        resumen = [[esP ? "Personas" : "Vehículos", sujetos.length], ["Material que tienen ahora", totBob], ["Entregas en el periodo", totEnt]];
       } else if (tipo === "consumo") {
         titulo = "Resumen de consumo por material";
         const acc = {};
@@ -2649,7 +2788,7 @@
         alert("No se han podido cargar los datos: " + (e.message || e));
       }
       const t = lsGet(K_TAB, "inicio");
-      currentTab = (t === "inicio" || t === "reponer" || t === "furgonetas" || owners.some(o => o.key === t)) ? t : "inicio";
+      currentTab = (["inicio", "almacen", "reponer", "furgonetas"].includes(t) || (t.startsWith("furgo:") && furgos.some(f => "furgo:" + f.key === t))) ? t : "inicio";
       render();
       suscribir();
       // Al volver a la app desde segundo plano, puede haberse cortado el tiempo real
