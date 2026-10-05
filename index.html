@@ -1579,11 +1579,8 @@
       if (!name) return;
       if (owners.some(o => o.name.toLowerCase() === name.toLowerCase())) return alert("Ya existe una pestaña con ese nombre.");
       const key = uid("op");
+      // Ya no se crea un catálogo por operadora: el material se añade a mano cuando haga falta
       if (!await consulta(sb.from("owners").insert({ key, name, fixed: false, orden: owners.length }))) return;
-      const filas = OPERADORA_BASE.map(([n, c, u], k) => ({ id: `${key}-${String(k + 1).padStart(3, "0")}`, name: n, owner: key, cat: c, unit: u }));
-      await consulta(sb.from("items").insert(filas));
-      currentTab = key;
-      lsSet(K_TAB, key);
       await refrescar();
     }
 
