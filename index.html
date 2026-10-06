@@ -1,7 +1,14 @@
 <!DOCTYPE html>
+<!--
+  Stock Motril Almacén · Planta Externa
+  © 2026 David Villa. Todos los derechos reservados.
+  Prohibida su copia, modificación, distribución o uso sin autorización expresa y por escrito del autor.
+-->
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="author" content="David Villa">
+  <meta name="copyright" content="© 2026 David Villa. Todos los derechos reservados.">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Stock Motril Almacén - Planta Externa Hoopo</title>
   <meta name="theme-color" content="#0b0f19">
@@ -622,6 +629,7 @@
     .check input { width: 20px; height: 20px; }
     .reponer-toolbar { flex-wrap: wrap; }
     .btn-export-main { width: 100%; }
+    .autoria { text-align: center; font-size: 0.6rem; color: var(--text-muted); opacity: 0.45; padding: 18px 10px 90px; }
     .dash { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 12px; }
     .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     @media (min-width: 700px) { .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -755,6 +763,8 @@
     </div>
     <div id="itemsContainer" class="grid-container"></div>
   </div>
+
+  <footer class="autoria">© 2026 David Villa. Todos los derechos reservados. Prohibida su copia o uso sin autorización.</footer>
 
   <div id="bottomBar" class="bottom-bar">
     <button id="btnAddBottom" class="btn-action-add" onclick="bottomAction()">➕ Añadir material</button>
@@ -1787,8 +1797,7 @@
       if (!filas.length) return `<p class="hint">No tiene consumibles entregados.</p>`;
       return `<ul class="dash-list">${filas.map((r, k) => `<li><span>${esc(r.name)}${r.owner !== "propio" ? ` <span class="owner-tag">${esc(ownerName(r.owner))}</span>` : ""}
           <span class="sub">${mostrarQuien && r.holder ? `${esc(holderName(r.holder))}. ` : ""}Última entrega: ${r.ultimo ? fechaCorta(r.ultimo) : "-"}</span></span>
-          <span class="li-acc"><b>${r.cant} ${r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant)}</b>${puedeMover() && items.some(i => i.id === r.id)
-            ? `<button type="button" class="btn-wide btn-devolver" data-devc="${k}">↩️ Devolver</button>` : ""}</span></li>`).join("")}</ul>`;
+          <span class="li-acc"><b>${r.cant} ${r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant)}</b></span></li>`).join("")}</ul>`;
     }
 
     // Línea de tiempo de entregas y devoluciones (con fecha y hora)
@@ -1885,7 +1894,7 @@
     function htmlQuienTiene(bobinas, filas) {
       let html = "<h3>Lo que tiene ahora (bobinas y material que se devuelve)</h3>";
       html += bobinas.length
-        ? "<ul>" + bobinas.map(b => `<li><span>${esc(b.item.name)}${esBobina(b.item) ? ` <span class="metros-line">${fmtM(b.item.metros)}</span>` : ""}${b.quien ? ` <span class="mov-user">${esc(b.quien)}</span>` : ""}</span><span class="li-acc"><b>${b.n} ${unidadTxt(b.item.unit, b.n)}</b>${puedeMover() && b.holder ? `<button type="button" class="btn-wide ${esBobina(b.item) ? "btn-metros" : "btn-devolver"}" data-devr="${esc(b.item.id)}|${esc(b.holder)}">${esBobina(b.item) ? "📏 Devolver" : "↩️ Devolver"}</button>` : ""}</span></li>`).join("") + "</ul>"
+        ? "<ul>" + bobinas.map(b => `<li><span>${esc(b.item.name)}${esBobina(b.item) ? ` <span class="metros-line">${fmtM(b.item.metros)}</span>` : ""}${b.quien ? ` <span class="mov-user">${esc(b.quien)}</span>` : ""}</span><span class="li-acc"><b>${b.n} ${unidadTxt(b.item.unit, b.n)}</b></span></li>`).join("") + "</ul>"
         : `<p class="hint">Nada pendiente de devolver.</p>`;
       html += "<h3>Consumibles entregados (descontando devoluciones)</h3>";
       html += filas.length
@@ -1912,14 +1921,14 @@
         const quien = b.key === fk ? "" : `La tiene ${esc(holderName(b.key))}. `;
         const dias = b.dias ? `${b.dias} ${b.dias === 1 ? "día" : "días"} fuera` : "Salió hoy";
         const met = esBobina(b.item) ? `<span class="sub metros-line">${fmtM(b.item.metros)}${(b.item.qty + fueraTotal(b.item)) > 1 ? " entre todas las bobinas de este cable" : ""}</span>` : "";
-        const btn = puedeMover() ? `<button type="button" class="btn-wide ${esBobina(b.item) ? "btn-metros" : "btn-devolver"}" data-dev="${k}">${esBobina(b.item) ? "📏 Devolver" : "↩️ Devolver"}</button>` : "";
+        const btn = "";
         return `<li><span>${esc(b.item.name)}${b.item.owner !== "propio" ? ` <span class="owner-tag">${esc(ownerName(b.item.owner))}</span>` : ""}<span class="sub">${quien}${dias}</span>${met}</span>
           <span class="li-acc"><b class="${b.dias >= DIAS_ALERTA_BOBINA ? "dias-alerta" : ""}">${b.n} ${unidadTxt(b.item.unit, b.n)}</b>${btn}</span></li>`;
       }).join("")}</ul>` : `<p class="hint">No tiene nada pendiente de devolver.</p>`;
       html += `</div>`;
       const cons = consumiblesNetos(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && m.destinoKey === fk
         && !esRetornableId(m.id)));
-      html += `<div class="dash-box"><h3>🧰 Consumibles entregados <small>si le sobran, Devolver</small></h3>${htmlConsumibles(cons, true)}</div>`;
+      html += `<div class="dash-box"><h3>🧰 Consumibles entregados <small>lo que le sobre, con ↩️ Devolver material</small></h3>${htmlConsumibles(cons, true)}</div>`;
       html += `<div class="dash-box"><h3>🕒 Entregas y devoluciones <small>fecha y hora</small></h3>${htmlLineaTiempo(movsAll.filter(m => m.destinoKey === fk && ["asignacion", "devolucion", "metros"].includes(m.tipo)))}</div>`;
       dash.innerHTML = html;
       enlazarDevolverConsumibles(dash, cons);
@@ -2898,7 +2907,7 @@
         ${inf.filtros.length ? `<p class="filtros">${inf.filtros.map(esc).join("&nbsp;&nbsp;|&nbsp;&nbsp;")}</p>` : ""}
         ${inf.resumen.length ? `<div class="res">${inf.resumen.map(r => `<div><b>${esc(typeof r[1] === "number" ? r[1].toLocaleString("es-ES") : r[1])}</b><span>${esc(r[0])}</span></div>`).join("")}</div>` : ""}
         ${cuerpo}
-        <div class="pie"><span>Stock Motril Almacén · Planta Externa Hoopo</span><span>${generado}</span></div>
+        <div class="pie"><span>Stock Motril Almacén · Planta Externa Hoopo · © 2026 David Villa</span><span>${generado}</span></div>
         </body></html>`);
       win.document.close();
       win.focus();
