@@ -973,8 +973,12 @@
         </select>
       </div>
       <div class="fg" id="fgExMes">
-        <label for="exMes">Mes</label>
-        <select id="exMes"></select>
+        <label for="exMes">Periodo</label>
+        <select id="exMes" onchange="document.getElementById('fgExRango').style.display = this.value === 'rango' ? 'flex' : 'none'"></select>
+      </div>
+      <div id="fgExRango" style="display:none; gap:8px;">
+        <div class="fg" style="flex:1;"><label for="exDesde">Desde</label><input type="date" id="exDesde"></div>
+        <div class="fg" style="flex:1;"><label for="exHasta">Hasta</label><input type="date" id="exHasta"></div>
       </div>
       <div class="fg" id="fgExOwner">
         <label for="exOwner">Propietario</label>
@@ -1736,10 +1740,47 @@
       return Object.values(resumen).filter(r => r.cant > 0).sort((a, b) => a.name.localeCompare(b.name));
     }
 
+    // Neto de consumibles entregados, agrupado por material y por quién lo tiene
+    function consumiblesNetos(lista) {
+      const r = {};
+      lista.forEach(m => {
+        const holder = m.personaKey || m.destinoKey || "";
+        const k = m.id + "|" + (m.sueltas ? 1 : 0) + "|" + holder;
+        if (!r[k]) r[k] = { id: m.id, name: m.name, owner: m.owner, unit: m.unit, sueltas: !!m.sueltas, holder, cant: 0, ultimo: 0 };
+        r[k].cant += m.tipo === "devolucion" ? -m.cant : m.cant;
+        if (m.tipo === "asignacion") r[k].ultimo = Math.max(r[k].ultimo, m.t);
+      });
+      return Object.values(r).filter(x => x.cant > 0).sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    function htmlConsumibles(filas, mostrarQuien) {
+      if (!filas.length) return `<p class="hint">No tiene consumibles entregados.</p>`;
+      return `<ul class="dash-list">${filas.map((r, k) => `<li><span>${esc(r.name)}${r.owner !== "propio" ? ` <span class="owner-tag">${esc(ownerName(r.owner))}</span>` : ""}
+          <span class="sub">${mostrarQuien && r.holder ? `${esc(holderName(r.holder))}. ` : ""}Última entrega: ${r.ultimo ? fechaCorta(r.ultimo) : "-"}</span></span>
+          <span class="li-acc"><b>${r.cant} ${r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant)}</b>${puedeMover() && items.some(i => i.id === r.id)
+            ? `<button type="button" class="btn-wide btn-devolver" data-devc="${k}">↩️ Devolver</button>` : ""}</span></li>`).join("")}</ul>`;
+    }
+
+    // Línea de tiempo de entregas y devoluciones (con fecha y hora)
+    function htmlLineaTiempo(lista) {
+      const ult = lista.slice(0, 40);
+      if (!ult.length) return `<p class="hint">Sin entregas ni devoluciones todavía.</p>`;
+      return `<div class="mov-table-wrap"><table class="mov-table"><thead><tr><th>Fecha y hora</th><th>Material</th><th>Movimiento</th></tr></thead>
+        <tbody>${ult.map(m => filaMov(m, esc(m.name))).join("")}</tbody></table></div>
+        ${lista.length > 40 ? `<p class="hint">Se muestran los 40 últimos. El resto, en Exportar &gt; Asignaciones por fechas.</p>` : ""}`;
+    }
+
+    function enlazarDevolverConsumibles(cont, filas) {
+      cont.querySelectorAll("[data-devc]").forEach(btn => btn.addEventListener("click", () => {
+        const r = filas[Number(btn.dataset.devc)];
+        openAsignar(r.id, "devolver", r.holder, r.sueltas);
+      }));
+    }
+
     function htmlQuienTiene(bobinas, filas) {
       let html = "<h3>Lo que tiene ahora (bobinas y material que se devuelve)</h3>";
       html += bobinas.length
-        ? "<ul>" + bobinas.map(b => `<li><span>${esc(b.item.name)}${esBobina(b.item) ? ` <span class="metros-line">${fmtM(b.item.metros)}</span>` : ""}${b.quien ? ` <span class="mov-user">${esc(b.quien)}</span>` : ""}</span><b>${b.n} ${unidadTxt(b.item.unit, b.n)}</b></li>`).join("") + "</ul>"
+        ? "<ul>" + bobinas.map(b => `<li><span>${esc(b.item.name)}${esBobina(b.item) ? ` <span class="metros-line">${fmtM(b.item.metros)}</span>` : ""}${b.quien ? ` <span class="mov-user">${esc(b.quien)}</span>` : ""}</span><span class="li-acc"><b>${b.n} ${unidadTxt(b.item.unit, b.n)}</b>${puedeMover() && b.holder ? `<button type="button" class="btn-wide ${esBobina(b.item) ? "btn-metros" : "btn-devolver"}" data-devr="${esc(b.item.id)}|${esc(b.holder)}">${esBobina(b.item) ? "📏 Devolver" : "↩️ Devolver"}</button>` : ""}</span></li>`).join("") + "</ul>"
         : `<p class="hint">Nada pendiente de devolver.</p>`;
       html += "<h3>Consumibles entregados (descontando devoluciones)</h3>";
       html += filas.length
@@ -1770,13 +1811,13 @@
           <span class="li-acc"><b class="${b.dias >= DIAS_ALERTA_BOBINA ? "dias-alerta" : ""}">${b.n} ${unidadTxt(b.item.unit, b.n)}</b>${btn}</span></li>`;
       }).join("")}</ul>` : `<p class="hint">No tiene nada pendiente de devolver.</p>`;
       html += `</div>`;
-      const mes = mesKey(Date.now());
-      const cons = resumenAsignado(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && m.destinoKey === fk
-        && mesKey(m.t) === mes && !esRetornableId(m.id)));
-      html += `<div class="dash-box"><h3>🧰 Consumibles entregados en ${mesLabel(mes)} <small>no hace falta devolverlos</small></h3>${cons.length
-        ? `<ul class="dash-list">${cons.map(r => `<li><span>${esc(r.name)}${r.owner !== "propio" ? ` <span class="owner-tag">${esc(ownerName(r.owner))}</span>` : ""}</span><b>${r.cant} ${r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant)}</b></li>`).join("")}</ul>`
-        : `<p class="hint">Nada este mes.</p>`}</div>`;
+      const cons = consumiblesNetos(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && m.destinoKey === fk
+        && !esRetornableId(m.id)));
+      html += `<div class="dash-box"><h3>🧰 Consumibles entregados <small>si le sobran, Devolver</small></h3>${htmlConsumibles(cons, true)}</div>`;
+      html += `<div class="dash-box"><h3>🕒 Entregas y devoluciones <small>fecha y hora</small></h3>${htmlLineaTiempo(movsAll.filter(m => m.destinoKey === fk && ["asignacion", "devolucion", "metros"].includes(m.tipo)))}</div>`;
       dash.innerHTML = html;
+      enlazarDevolverConsumibles(dash, cons);
+      enlazarAnular(dash, () => render());
       dash.querySelectorAll("[data-dev]").forEach(btn => btn.addEventListener("click", () => {
         const b = tiene[Number(btn.dataset.dev)];
         if (esBobina(b.item)) openMetros(b.item.id, b.key);
@@ -1817,7 +1858,7 @@
           return;
         }
         personas.filter(p => p.name.toLowerCase().includes(searchQuery)).forEach(p => {
-          const bobinas = items.filter(i => (i.fuera || {})[p.key] > 0).map(i => ({ item: i, n: i.fuera[p.key] }));
+          const bobinas = items.filter(i => (i.fuera || {})[p.key] > 0).map(i => ({ item: i, n: i.fuera[p.key], holder: p.key }));
           const nBob = bobinas.reduce((a, b) => a + b.n, 0);
           const meta = `${p.furgo ? `<span>🚐 ${esc(furgoName(p.furgo))}</span>` : ""}${nBob ? `<span style="color:#d8b4fe">${nBob} fuera</span>` : ""}`;
           container.appendChild(makeGroup(`p:${p.key}`, `👷 ${esc(p.name)}`, meta, body => {
@@ -1828,7 +1869,16 @@
             body.appendChild(tools);
             const div = document.createElement("div");
             div.className = "furgo-list";
-            div.innerHTML = htmlQuienTiene(bobinas, resumenAsignado(asignaciones.filter(m => m.personaKey === p.key)));
+            const cons = consumiblesNetos(asignaciones.filter(m => m.personaKey === p.key));
+            div.innerHTML = htmlQuienTiene(bobinas, []).replace(/<h3>Consumibles entregados[\s\S]*$/, "")
+              + `<h3>Consumibles entregados (descontando devoluciones)</h3>` + htmlConsumibles(cons, false)
+              + `<h3>🕒 Entregas y devoluciones</h3>` + htmlLineaTiempo(movsAll.filter(m => m.personaKey === p.key && ["asignacion", "devolucion", "metros"].includes(m.tipo)));
+            enlazarDevolverConsumibles(div, cons);
+            div.querySelectorAll("[data-devr]").forEach(btn => btn.addEventListener("click", () => {
+              const [id, h] = btn.dataset.devr.split("|");
+              if (esBobina(items.find(i => i.id === id))) openMetros(id, h); else openAsignar(id, "devolver", h);
+            }));
+            enlazarAnular(div, () => render());
             body.appendChild(div);
           }));
         });
@@ -2070,7 +2120,7 @@
     }
 
     // ================== ASIGNAR ==================
-    function openAsignar(id, modo, preset) {
+    function openAsignar(id, modo, preset, presetSueltas) {
       const item = items.find(i => i.id === id);
       if (!item) return;
       const dev = modo === "devolver";
@@ -2093,6 +2143,7 @@
         document.getElementById("aFurgo").innerHTML = tienen.map(([k, n]) => `<option value="${k}">${esc(holderName(k))} (tiene ${n})</option>`).join("");
       }
       if (preset && [...document.getElementById("aFurgo").options].some(o => o.value === preset)) document.getElementById("aFurgo").value = preset;
+      if (esCaja(item) && presetSueltas !== undefined) document.getElementById("aUnit").value = presetSueltas ? "suelta" : "caja";
       document.getElementById("aQty").value = "1";
       updateAsignLabel();
       openM("asignModal");
@@ -2128,6 +2179,12 @@
       if (!item || !n || n < 1) return alert("Indica una cantidad mayor que 0.");
       const sueltas = esCaja(item) && document.getElementById("aUnit").value === "suelta";
       if (document.getElementById("asignModo").value === "devolver") {
+        if (!esRetornable(item)) {
+          // No se puede devolver más de lo que se le entregó (neto)
+          const neto = consumiblesNetos(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && m.id === item.id
+            && (m.personaKey === fKey || (!m.personaKey && m.destinoKey === fKey)))).filter(r => r.sueltas === sueltas).reduce((a, r) => a + r.cant, 0);
+          if (n > neto) return alert(`${holderName(fKey)} solo tiene ${neto} ${sueltas ? "uds sueltas" : unidadTxt(item.unit, neto)} de este material entregadas.`);
+        }
         if (await rpc("devolver", { p_item: item.id, p_origen: fKey, p_cant: n, p_sueltas: sueltas })) closeM("asignModal");
         return;
       }
@@ -2492,7 +2549,11 @@
       const meses = new Set(movs.map(m => mesKey(m.t)));
       meses.add(mesKey(Date.now()));
       document.getElementById("exMes").innerHTML = [...meses].sort().reverse()
-        .map(k => `<option value="${k}">${mesLabel(k)}</option>`).join("") + `<option value="all">Todo el historial</option>`;
+        .map(k => `<option value="${k}">${mesLabel(k)}</option>`).join("") + `<option value="rango">📅 Entre dos fechas…</option><option value="all">Todo el historial</option>`;
+      const hoyD = new Date(); const p2 = n => String(n).padStart(2, "0");
+      document.getElementById("exDesde").value = `${hoyD.getFullYear()}-${p2(hoyD.getMonth() + 1)}-01`;
+      document.getElementById("exHasta").value = `${hoyD.getFullYear()}-${p2(hoyD.getMonth() + 1)}-${p2(hoyD.getDate())}`;
+      document.getElementById("fgExRango").style.display = "none";
       document.getElementById("exOwner").innerHTML = `<option value="all">Todos</option>` +
         owners.map(o => `<option value="${o.key}">${esc(o.name)}</option>`).join("");
       if (currentTab === "almacen" && filtroOwner !== "all") document.getElementById("exOwner").value = filtroOwner;
@@ -2504,6 +2565,7 @@
     function updateExportForm() {
       const cfg = EXPORT_TIPOS[document.getElementById("exTipo").value];
       document.getElementById("fgExMes").style.display = cfg.mes ? "block" : "none";
+      document.getElementById("fgExRango").style.display = cfg.mes && document.getElementById("exMes").value === "rango" ? "flex" : "none";
       document.getElementById("fgExOwner").style.display = "none";
       document.getElementById("exOwner").value = "all";
       document.getElementById("fgExFurgo").style.display = cfg.quien ? "block" : "none";
@@ -2533,15 +2595,20 @@
       const owner = cfg.owner ? document.getElementById("exOwner").value : "all";
       const quien = cfg.quien ? document.getElementById("exFurgo").value : "all";
       const okOwner = o => owner === "all" || o === owner;
-      const okMes = t => !mes || mes === "all" || mesKey(t) === mes;
+      const dDesde = new Date((document.getElementById("exDesde").value || "1970-01-01") + "T00:00:00").getTime();
+      const dHasta = new Date((document.getElementById("exHasta").value || "2999-12-31") + "T23:59:59").getTime();
+      const okMes = t => !mes || mes === "all" || (mes === "rango" ? t >= dDesde && t <= dHasta : mesKey(t) === mes);
+      const fEs = v => v ? v.split("-").reverse().join("/") : "";
       const porOwner = (a, b) => ownerName(a.owner).localeCompare(ownerName(b.owner)) || a.name.localeCompare(b.name);
-      const periodoTxt = mes === "all" ? "todo el historial" : mes ? mesLabel(mes) : "";
+      const periodoTxt = mes === "all" ? "todo el historial" : mes === "rango"
+        ? `del ${fEs(document.getElementById("exDesde").value)} al ${fEs(document.getElementById("exHasta").value)}` : mes ? mesLabel(mes) : "";
       const filtros = [];
       if (cfg.mes) filtros.push(`Periodo: ${periodoTxt}`);
       if (cfg.owner) filtros.push(`Propietario: ${owner === "all" ? "todos" : ownerName(owner)}`);
       if (cfg.quien) filtros.push(quien === "all" ? (cfg.quien === "personas" ? "Personas: todas" : cfg.quien === "furgos" ? "Furgonetas: todas" : "Personas y furgonetas: todas")
         : quien.startsWith("p-") ? `Persona: ${holderName(quien)}` : `Furgoneta: ${furgoName(quien)}`);
-      const slugPeriodo = cfg.mes ? (mes === "all" ? "todo" : mes) : "actual";
+      const slugPeriodo = cfg.mes ? (mes === "all" ? "todo" : mes === "rango"
+        ? `${document.getElementById("exDesde").value}_a_${document.getElementById("exHasta").value}` : mes) : "actual";
       let titulo, headers, rows, resumen = [], secciones = null, orient = "landscape";
       const conMov = new Set(movs.map(m => m.id));
 
@@ -2634,7 +2701,7 @@
         const lista = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion" || (m.tipo === "metros" && (m.destinoKey || m.personaKey))) && okMes(m.t) && okQuien(m)).slice().reverse();
         rows = lista.map(m => [...fechaHora(m.t), m.persona || "", m.destino || "", ownerName(m.owner), m.name,
           m.tipo === "asignacion" ? "Asignado" : m.tipo === "devolucion" ? "Devuelto" : "Bobina devuelta, metros gastados", m.cant, unidadMov(m), detalleMov(m), m.user || ""]);
-        resumen = [["Entregas", lista.filter(m => m.tipo === "asignacion").length], ["Bobinas devueltas", lista.filter(m => m.tipo === "metros").length]];
+        resumen = [["Entregas", lista.filter(m => m.tipo === "asignacion").length], ["Devoluciones", lista.filter(m => m.tipo === "devolucion").length], ["Bobinas devueltas", lista.filter(m => m.tipo === "metros").length]];
       }
       return { tipo, titulo, headers, rows, filtros, slugPeriodo, resumen, secciones, orient };
     }
