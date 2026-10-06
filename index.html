@@ -704,6 +704,20 @@
     .backup-box .m-btn { flex: 1; }
     .export-inv { background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.4); color: var(--accent); }
     .modal-sheet { max-height: 92vh; overflow-y: auto; }
+    .modal-backdrop { align-items: center; padding: 16px; }
+    .modal-sheet { border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+    .dv-list { max-height: 55vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+    .dv-row { border: 1px solid var(--card-border); border-radius: 12px; padding: 10px; background: rgba(255,255,255,0.03); }
+    .dv-row.on { border-color: rgba(16,185,129,0.6); background: rgba(16,185,129,0.08); }
+    .dv-top { display: flex; gap: 10px; align-items: center; cursor: pointer; }
+    .dv-top input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; }
+    .dv-name { flex: 1; font-size: 0.88rem; color: #e2e8f0; font-weight: 700; }
+    .dv-name small { display: block; font-weight: 500; color: var(--text-muted); font-size: 0.72rem; margin-top: 2px; }
+    .dv-fields { display: none; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+    .dv-row.on .dv-fields { display: flex; }
+    .dv-fields input[type=number] { width: 110px; padding: 8px; background: #0b0f19; border: 1px solid var(--card-border); border-radius: 8px; color: #fff; font-size: 0.95rem; }
+    .dv-fields span, .dv-fields label { font-size: 0.78rem; color: var(--text-muted); display: flex; gap: 6px; align-items: center; }
+    .dv-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
     button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     @media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
   </style>
@@ -923,6 +937,22 @@
       <div id="pickList" class="pick-list"></div>
       <div class="modal-btns">
         <button class="m-btn m-cancel" onclick="closeM('pickModal')">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal devolver varias cosas -->
+  <div id="dvModal" class="modal-backdrop" onclick="if (event.target === this) closeM('dvModal')">
+    <div class="modal-sheet">
+      <h2 id="dvTitle">↩️ Devolver al almacén</h2>
+      <div class="dv-head">
+        <p class="mov-sheet-sub" id="dvSub" style="margin:0;">Marca lo que devuelve y la cantidad.</p>
+        <label class="check" style="margin:0;"><input type="checkbox" id="dvTodos" onchange="dvMarcarTodos(this.checked)"> Todo</label>
+      </div>
+      <div id="dvList" class="dv-list"></div>
+      <div class="modal-btns">
+        <button class="m-btn m-cancel" onclick="closeM('dvModal')">Cancelar</button>
+        <button class="m-btn m-save" id="dvBtn" onclick="doDevolverVarios()">Devolver</button>
       </div>
     </div>
   </div>
@@ -1777,6 +1807,81 @@
       }));
     }
 
+    // ================== DEVOLVER VARIAS COSAS ==================
+    let dvLineas = [];
+
+    // claves: personas/furgonetas cuyas cosas se muestran; filtroCons: qué entregas de consumibles cuentan
+    function openDevolverVarios(titulo, claves, filtroCons) {
+      dvLineas = [];
+      bobinasDe(claves).forEach(b => {
+        if (esBobina(b.item)) {
+          for (let k = 0; k < b.n; k++) dvLineas.push({ tipo: "bobina", item: b.item, holder: b.key, max: 1 });
+        } else dvLineas.push({ tipo: "ret", item: b.item, holder: b.key, max: b.n });
+      });
+      consumiblesNetos(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && !esRetornableId(m.id) && filtroCons(m)))
+        .forEach(r => { const it = items.find(i => i.id === r.id); if (it) dvLineas.push({ tipo: "cons", item: it, holder: r.holder, max: r.cant, sueltas: r.sueltas }); });
+      if (!dvLineas.length) return alert("No tiene nada que devolver.");
+      document.getElementById("dvTitle").textContent = `↩️ Devolver al almacén: ${titulo}`;
+      document.getElementById("dvTodos").checked = false;
+      const varios = new Set(dvLineas.map(l => l.holder)).size > 1;
+      document.getElementById("dvList").innerHTML = dvLineas.map((l, k) => {
+        const u = l.sueltas ? "uds sueltas" : unidadTxt(l.item.unit, l.max);
+        const quien = varios ? `${esc(holderName(l.holder))}. ` : "";
+        const det = l.tipo === "bobina" ? `${quien}Bobina, ahora con ${fmtM(l.item.metros)} en total` : `${quien}Tiene ${l.max} ${u}`;
+        const campos = l.tipo === "bobina"
+          ? `<span>Metros gastados</span><input type="number" min="0" inputmode="numeric" data-m="${k}" placeholder="Ej: 300">
+             <label><input type="checkbox" data-t="${k}"> Se ha terminado</label>`
+          : `<span>Cantidad</span><input type="number" min="1" max="${l.max}" inputmode="numeric" data-q="${k}" value="${l.max}"><span>de ${l.max} ${u}</span>`;
+        return `<div class="dv-row" id="dvr${k}"><label class="dv-top"><input type="checkbox" data-c="${k}" onchange="dvToggle(${k}, this.checked)">
+          <span class="dv-name">${esc(l.item.name)}<small>${det}</small></span></label><div class="dv-fields">${campos}</div></div>`;
+      }).join("");
+      dvContar();
+      openM("dvModal");
+    }
+
+    function dvToggle(k, on) { document.getElementById("dvr" + k).classList.toggle("on", on); dvContar(); }
+    function dvMarcarTodos(v) {
+      document.querySelectorAll("#dvList [data-c]").forEach(c => { c.checked = v; dvToggle(Number(c.dataset.c), v); });
+    }
+    function dvContar() {
+      const n = document.querySelectorAll("#dvList [data-c]:checked").length;
+      const b = document.getElementById("dvBtn");
+      b.textContent = n ? `Devolver ${n} ${n === 1 ? "cosa" : "cosas"}` : "Devolver";
+      b.disabled = !n;
+    }
+
+    async function doDevolverVarios() {
+      if (ocupado) return;
+      const marcadas = [...document.querySelectorAll("#dvList [data-c]:checked")].map(c => Number(c.dataset.c));
+      if (!marcadas.length) return;
+      const ops = [];
+      for (const k of marcadas) {
+        const l = dvLineas[k];
+        if (l.tipo === "bobina") {
+          const m = Math.max(0, parseInt(document.querySelector(`[data-m="${k}"]`).value, 10) || 0);
+          const terminada = document.querySelector(`[data-t="${k}"]`).checked;
+          if (m === 0 && !terminada && !confirm(`${l.item.name}: no has puesto metros gastados. ¿Vuelve con los mismos metros?`)) return;
+          ops.push({ l, fn: "metros_gastados", args: { p_item: l.item.id, p_origen: l.holder, p_metros: m, p_terminada: terminada } });
+        } else {
+          const q = parseInt(document.querySelector(`[data-q="${k}"]`).value, 10) || 0;
+          if (q < 1 || q > l.max) return alert(`${l.item.name}: la cantidad tiene que estar entre 1 y ${l.max}.`);
+          ops.push({ l, fn: "devolver", args: { p_item: l.item.id, p_origen: l.holder, p_cant: q, p_sueltas: !!l.sueltas } });
+        }
+      }
+      ocupado = true;
+      const fallos = [];
+      try {
+        for (const o of ops) {
+          const { error } = await sb.rpc(o.fn, o.args);
+          if (error) fallos.push(`${o.l.item.name}: ${error.message}`);
+        }
+      } catch (e) { fallos.push("Sin conexión con el servidor."); }
+      finally { ocupado = false; }
+      await refrescar();
+      if (fallos.length) alert(`Se ha devuelto lo demás, pero esto ha fallado:\n\n${fallos.join("\n")}`);
+      else closeM("dvModal");
+    }
+
     function htmlQuienTiene(bobinas, filas) {
       let html = "<h3>Lo que tiene ahora (bobinas y material que se devuelve)</h3>";
       html += bobinas.length
@@ -1798,7 +1903,8 @@
         .map(b => ({ ...b, dias: diasFuera(b.item, b.key) })).sort((a, b) => b.dias - a.dias);
       const dash = document.createElement("div");
       dash.className = "dash";
-      let html = `<div class="dash-box"><h3>👷 Personas de esta furgoneta</h3>${suyas.length
+      let html = puedeMover() ? `<button type="button" class="btn-wide btn-devolver" data-dvall="1" style="min-height:46px;font-size:0.9rem;">↩️ Devolver material de ${esc(f.name)}</button>` : "";
+      html += `<div class="dash-box"><h3>👷 Personas de esta furgoneta</h3>${suyas.length
         ? `<p class="hint">${suyas.map(p => esc(p.name)).join(", ")}</p>`
         : `<p class="hint">Sin personas. Puedes asignarles esta furgoneta en 👷 Personas.</p>`}</div>`;
       html += `<div class="dash-box"><h3>📦 Lo que tiene ahora <small>pendiente de devolver</small></h3>`;
@@ -1818,6 +1924,8 @@
       dash.innerHTML = html;
       enlazarDevolverConsumibles(dash, cons);
       enlazarAnular(dash, () => render());
+      const bAll = dash.querySelector("[data-dvall]");
+      if (bAll) bAll.addEventListener("click", () => openDevolverVarios(f.name, claves, m => m.destinoKey === fk));
       dash.querySelectorAll("[data-dev]").forEach(btn => btn.addEventListener("click", () => {
         const b = tiene[Number(btn.dataset.dev)];
         if (esBobina(b.item)) openMetros(b.item.id, b.key);
@@ -1864,8 +1972,11 @@
           container.appendChild(makeGroup(`p:${p.key}`, `👷 ${esc(p.name)}`, meta, body => {
             const tools = document.createElement("div");
             tools.className = "group-tools tools-persona";
-            tools.innerHTML = `<button type="button" class="btn-wide btn-asignar">✎ Editar persona</button>`;
-            tools.querySelector("button").addEventListener("click", () => openPersonaModal(p.key));
+            tools.innerHTML = `<button type="button" class="btn-wide btn-devolver">↩️ Devolver material</button>
+              <button type="button" class="btn-wide btn-asignar">✎ Editar persona</button>`;
+            const [bDv, bEd] = tools.querySelectorAll("button");
+            bDv.addEventListener("click", () => openDevolverVarios(p.name, [p.key], m => m.personaKey === p.key));
+            bEd.addEventListener("click", () => openPersonaModal(p.key));
             body.appendChild(tools);
             const div = document.createElement("div");
             div.className = "furgo-list";
