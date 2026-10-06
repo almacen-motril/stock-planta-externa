@@ -714,6 +714,17 @@
     .modal-sheet { max-height: 92vh; overflow-y: auto; }
     .modal-backdrop { align-items: center; padding: 16px; }
     .modal-sheet { border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+    .mov-motivo { font-size: 0.66rem; color: #fbbf24; margin-top: 2px; }
+    .rc-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--card-border); }
+    .rc-row .rc-name { font-size: 0.85rem; color: #e2e8f0; }
+    .rc-row .rc-name small { display: block; color: var(--text-muted); font-size: 0.7rem; }
+    .rc-ins { display: flex; gap: 6px; align-items: center; }
+    .rc-ins input { width: 78px; padding: 7px; background: #0b0f19; border: 1px solid var(--card-border); border-radius: 8px; color: #fff; font-size: 0.9rem; }
+    .rc-ins span { font-size: 0.66rem; color: var(--text-muted); }
+    .rc-diff { font-size: 0.72rem; font-weight: 800; min-width: 44px; text-align: right; }
+    .rc-diff.neg { color: #f87171; } .rc-diff.pos { color: #34d399; } .rc-diff.ok { color: var(--text-muted); }
+    .rc-row.cambio { background: rgba(245,158,11,0.06); }
+    .rc-fam { font-size: 0.72rem; color: var(--text-muted); margin: 12px 0 2px; font-weight: 800; }
     .dv-list { max-height: 55vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
     .dv-row { border: 1px solid var(--card-border); border-radius: 12px; padding: 10px; background: rgba(255,255,255,0.03); }
     .dv-row.on { border-color: rgba(16,185,129,0.6); background: rgba(16,185,129,0.08); }
@@ -830,7 +841,17 @@
         <label for="mMetros">Metros totales de este cable (todas sus bobinas)</label>
         <input type="number" id="mMetros" min="0" inputmode="numeric">
       </div>
-      <p class="hint" id="adjHint">Si cambias el stock o los metros a mano queda registrado como ajuste de recuento.</p>
+      <p class="hint" id="adjHint">Si cambias el stock o los metros a mano queda registrado como ajuste, con su motivo.</p>
+      <div id="fgMotivo" style="display:none; gap:8px;">
+        <div class="fg" style="flex:1;">
+          <label for="mMotivo">Motivo del ajuste</label>
+          <select id="mMotivo"></select>
+        </div>
+        <div class="fg" style="flex:1.4;">
+          <label for="mObs">Observación</label>
+          <input type="text" id="mObs" placeholder="Ej: se han contado 47 y ponía 50">
+        </div>
+      </div>
 
       <div id="quickMov" class="quick-mov">
         <div class="fg" style="margin-bottom:0;">
@@ -951,6 +972,54 @@
     </div>
   </div>
 
+  <!-- Modal anular -->
+  <div id="anularModal" class="modal-backdrop" onclick="if (event.target === this) closeM('anularModal')">
+    <div class="modal-sheet">
+      <h2>↶ Anular movimiento</h2>
+      <p class="mov-sheet-sub" id="anSub"></p>
+      <input type="hidden" id="anId">
+      <div class="fg">
+        <label for="anMotivo">Motivo</label>
+        <select id="anMotivo">
+          <option value="">Elige un motivo…</option>
+          <option>Duplicado</option>
+          <option>Error al registrar</option>
+          <option>Persona o furgoneta equivocada</option>
+          <option>Cantidad equivocada</option>
+          <option>Material equivocado</option>
+          <option>Otro</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label for="anObs">Observación (opcional)</label>
+        <input type="text" id="anObs" placeholder="Ej: se apuntó dos veces">
+      </div>
+      <p class="hint">Se deshace su efecto en el stock y queda tachado en el historial, con el motivo y quién lo anuló.</p>
+      <div class="modal-btns">
+        <button class="m-btn m-cancel" onclick="closeM('anularModal')">Cancelar</button>
+        <button class="m-btn m-del" onclick="doAnular()">Anular</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal recuento físico -->
+  <div id="recModal" class="modal-backdrop" onclick="if (event.target === this) closeM('recModal')">
+    <div class="modal-sheet" style="max-width:640px;">
+      <h2>📋 Recuento físico</h2>
+      <p class="mov-sheet-sub">Escribe lo que hay de verdad. Deja en blanco lo que no hayas contado. Las diferencias se guardan como ajustes con el motivo "Recuento físico".</p>
+      <input type="text" id="recSearch" class="search-box" placeholder="🔍 Buscar material..." oninput="renderRecuento()">
+      <div id="recList" style="max-height:52vh; overflow-y:auto; margin-top:6px;"></div>
+      <div class="fg" style="margin-top:10px;">
+        <label for="recObs">Observación del recuento (opcional)</label>
+        <input type="text" id="recObs" placeholder="Ej: recuento mensual de octubre">
+      </div>
+      <div class="modal-btns">
+        <button class="m-btn m-cancel" onclick="closeM('recModal')">Cerrar</button>
+        <button class="m-btn m-save" id="recBtn" onclick="doRecuento()">Guardar recuento</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal devolver varias cosas -->
   <div id="dvModal" class="modal-backdrop" onclick="if (event.target === this) closeM('dvModal')">
     <div class="modal-sheet">
@@ -1008,6 +1077,7 @@
           </optgroup>
           <optgroup label="Movimientos">
             <option value="movimientos">Movimientos con fecha y hora</option>
+            <option value="balance">Balance de stock (inicial y final)</option>
             <option value="consumo">Resumen de consumo por material</option>
           </optgroup>
         </select>
@@ -1290,7 +1360,8 @@
       return { dbId: r.id, t: new Date(r.t).getTime(), id: r.item_id, name: r.name, owner: r.owner, unit: r.unit,
         tipo: r.tipo, cant: r.cant, destino: r.destino || "", destinoKey: r.destino_key || "", persona: r.persona || "", personaKey: r.persona_key || "", sueltas: r.sueltas,
         abiertas: r.abiertas, terminada: r.terminada, unitOverride: r.unit_override || undefined, user: r.user_email || "",
-        anulado: !!r.anulado, anuladoPor: r.anulado_por || "" };
+        anulado: !!r.anulado, anuladoPor: r.anulado_por || "", motivo: r.motivo || "", observacion: r.observacion || "",
+        anuladoMotivo: r.anulado_motivo || "" };
     }
     function mapLista(r) { return { key: r.key, name: r.name, fixed: r.fixed, orden: r.orden }; }
 
@@ -1538,27 +1609,139 @@
       return { cls: m.tipo === "entrada" ? "mov-in-cell" : "mov-out-cell", txt: `${m.cant} ${m.sueltas ? "uds sueltas" : unidadTxt(m.unit, m.cant)}${abiertasTxt}` };
     }
 
+    const MOTIVOS_AJUSTE = ["Recuento físico", "Rotura", "Material defectuoso", "Pérdida", "Error de inventario", "Alta de material", "Otro"];
+    function mesPasado(t) { return mesKey(t) < mesKey(Date.now()); }
+    function puedeAnular(m) { return !m.anulado && puedeMover() && (esResponsable() || !mesPasado(m.t)); }
+    function motivoTxt(m) { return [m.motivo, m.observacion].filter(Boolean).join(": "); }
+
     function filaMov(m, columna2) {
       const x = textoMov(m);
-      const anul = m.anulado ? `<div class="tag-anulado">ANULADO${m.anuladoPor ? ` por ${esc(m.anuladoPor)}` : ""}</div>` : "";
-      const btn = !m.anulado && puedeMover() ? `<button type="button" class="btn-anular" data-anular="${m.dbId}">↶ Anular</button>` : "";
-      return `<tr class="${m.anulado ? "anulado" : ""}"><td>${fechaCorta(m.t)}${btn ? `<div>${btn}</div>` : ""}</td><td>${columna2}${m.user ? `<div class="mov-user">${esc(m.user)}</div>` : ""}${anul}</td><td class="${x.cls}">${x.txt}</td></tr>`;
+      const anul = m.anulado ? `<div class="tag-anulado">ANULADO${m.anuladoPor ? ` por ${esc(m.anuladoPor)}` : ""}${m.anuladoMotivo ? `. ${esc(m.anuladoMotivo)}` : ""}</div>` : "";
+      const mot = motivoTxt(m) ? `<div class="mov-motivo">Motivo: ${esc(motivoTxt(m))}</div>` : "";
+      const btn = puedeAnular(m) ? `<button type="button" class="btn-anular" data-anular="${m.dbId}">↶ Anular</button>` : "";
+      return `<tr class="${m.anulado ? "anulado" : ""}"><td>${fechaCorta(m.t)}${btn ? `<div>${btn}</div>` : ""}</td><td>${columna2}${m.user ? `<div class="mov-user">${esc(m.user)}</div>` : ""}${mot}${anul}</td><td class="${x.cls}">${x.txt}</td></tr>`;
     }
 
+    let anularDespues = null;
     function enlazarAnular(contenedor, alTerminar) {
-      contenedor.querySelectorAll("[data-anular]").forEach(b => b.addEventListener("click", async () => {
+      contenedor.querySelectorAll("[data-anular]").forEach(b => b.addEventListener("click", () => {
         const m = movsAll.find(x => x.dbId === Number(b.dataset.anular));
         if (!m) return;
-        const x = textoMov(m);
-        const txt = x.txt.replace(/<[^>]+>/g, "");
-        if (!confirm(`¿Anular este movimiento?\n\n${m.name}: ${TIPOS_TXT[m.tipo] || m.tipo}, ${txt}\n\nSe deshace su efecto en el stock y queda marcado como anulado en el historial.`)) return;
-        if (await rpc("anular", { p_mov: m.dbId })) {
-          m.anulado = true;
-          derivarMovs();
-          render();
-          alTerminar();
-        }
+        const txt = textoMov(m).txt.replace(/<[^>]+>/g, "");
+        document.getElementById("anId").value = m.dbId;
+        document.getElementById("anSub").textContent = `${fechaCorta(m.t)} · ${m.name}: ${TIPOS_TXT[m.tipo] || m.tipo}, ${txt}`;
+        document.getElementById("anMotivo").value = "";
+        document.getElementById("anObs").value = "";
+        anularDespues = alTerminar;
+        openM("anularModal");
       }));
+    }
+
+    async function doAnular() {
+      const id = Number(document.getElementById("anId").value);
+      const mot = document.getElementById("anMotivo").value;
+      const obs = document.getElementById("anObs").value.trim();
+      if (!mot) return alert("Elige un motivo.");
+      if (await rpc("anular", { p_mov: id, p_motivo: obs ? `${mot}: ${obs}` : mot })) {
+        const m = movsAll.find(x => x.dbId === id);
+        if (m) { m.anulado = true; m.anuladoMotivo = obs ? `${mot}: ${obs}` : mot; }
+        derivarMovs();
+        closeM("anularModal");
+        render();
+        if (anularDespues) anularDespues();
+      }
+    }
+
+    // ================== RECUENTO FÍSICO ==================
+    let recVals = {};
+    function openRecuento() {
+      recVals = {};
+      document.getElementById("recSearch").value = "";
+      document.getElementById("recObs").value = "";
+      renderRecuento();
+      openM("recModal");
+    }
+
+    function recCampos(i) {
+      const c = [{ k: "qty", sis: i.qty, u: unidadTxt(i.unit, 2) }];
+      if (esCaja(i)) c.push({ k: "sueltas", sis: i.sueltas, u: "sueltas" });
+      if (esBobina(i)) c.push({ k: "metros", sis: i.metros, u: "m" });
+      return c;
+    }
+
+    function renderRecuento() {
+      const q = document.getElementById("recSearch").value.toLowerCase().trim();
+      const lista = items.filter(i => i.name.toLowerCase().includes(q));
+      const cats = [...todasFamilias()];
+      lista.forEach(i => { if (!cats.some(c => c.key === i.cat)) cats.push({ key: i.cat, label: nombreCategoria(i.cat) }); });
+      document.getElementById("recList").innerHTML = cats.map(c => {
+        const deC = lista.filter(i => i.cat === c.key).sort((a, b) => a.name.localeCompare(b.name));
+        if (!deC.length) return "";
+        return `<div class="rc-fam">${esc(sinEmoji(c.label))}</div>` + deC.map(i => {
+          const ins = recCampos(i).map(cp => {
+            const v = (recVals[i.id] || {})[cp.k];
+            return `<input type="number" min="0" inputmode="numeric" data-rid="${esc(i.id)}" data-rk="${cp.k}" placeholder="${cp.sis}" value="${v ?? ""}"><span>${cp.u}</span>`;
+          }).join("");
+          return `<div class="rc-row" id="rc-${esc(i.id)}"><div class="rc-name">${esc(i.name)}<small>Sistema: ${recCampos(i).map(cp => `${cp.sis} ${cp.u}`).join(", ")}${fueraTotal(i) ? `, ${fueraTotal(i)} fuera` : ""}</small></div>
+            <div class="rc-ins">${ins}<span class="rc-diff ok" id="rcd-${esc(i.id)}"></span></div></div>`;
+        }).join("");
+      }).join("") || `<p class="hint">Ningún material coincide.</p>`;
+      document.querySelectorAll("#recList [data-rid]").forEach(inp => inp.addEventListener("input", () => {
+        const id = inp.dataset.rid;
+        recVals[id] = recVals[id] || {};
+        if (inp.value === "") delete recVals[id][inp.dataset.rk]; else recVals[id][inp.dataset.rk] = Math.max(0, parseInt(inp.value, 10) || 0);
+        pintarDiff(id);
+      }));
+      Object.keys(recVals).forEach(pintarDiff);
+    }
+
+    function difsDe(id) {
+      const i = items.find(x => x.id === id);
+      if (!i || !recVals[id]) return [];
+      return recCampos(i).filter(cp => recVals[id][cp.k] !== undefined && recVals[id][cp.k] !== cp.sis)
+        .map(cp => ({ ...cp, real: recVals[id][cp.k], d: recVals[id][cp.k] - cp.sis }));
+    }
+
+    function pintarDiff(id) {
+      const el = document.getElementById("rcd-" + id);
+      const row = document.getElementById("rc-" + id);
+      const dif = difsDe(id);
+      const contado = recVals[id] && Object.keys(recVals[id]).length;
+      if (el) {
+        el.className = "rc-diff " + (!dif.length ? "ok" : dif[0].d < 0 ? "neg" : "pos");
+        el.textContent = !contado ? "" : !dif.length ? "✓" : dif.map(x => `${x.d > 0 ? "+" : ""}${x.d}`).join(" / ");
+      }
+      if (row) row.classList.toggle("cambio", dif.length > 0);
+      const n = Object.keys(recVals).filter(k => difsDe(k).length).length;
+      document.getElementById("recBtn").textContent = n ? `Guardar recuento (${n} con diferencias)` : "Guardar recuento";
+    }
+
+    async function doRecuento() {
+      if (ocupado) return;
+      const conDif = Object.keys(recVals).filter(id => difsDe(id).length);
+      const contados = Object.keys(recVals).filter(id => Object.keys(recVals[id]).length).length;
+      if (!contados) return alert("No has contado nada todavía.");
+      if (!conDif.length) { alert(`Has contado ${contados} materiales y todo cuadra con el sistema. ✓`); closeM("recModal"); return; }
+      if (!confirm(`Has contado ${contados} materiales. ${conDif.length} tienen diferencias y se guardarán como ajuste. ¿Seguir?`)) return;
+      const obsGen = document.getElementById("recObs").value.trim();
+      ocupado = true;
+      const fallos = [];
+      try {
+        for (const id of conDif) {
+          const i = items.find(x => x.id === id);
+          const v = recVals[id];
+          const obs = [difsDe(id).map(x => `sistema ${x.sis} ${x.u}, contado ${x.real}`).join("; "), obsGen].filter(Boolean).join(". ");
+          const { error } = await sb.rpc("ajustar", {
+            p_item: id, p_qty: v.qty ?? i.qty, p_sueltas: v.sueltas ?? i.sueltas, p_metros: v.metros ?? i.metros,
+            p_motivo: "Recuento físico", p_obs: obs
+          });
+          if (error) fallos.push(`${i.name}: ${error.message}`);
+        }
+      } catch (e) { fallos.push("Sin conexión con el servidor."); }
+      finally { ocupado = false; }
+      await refrescar();
+      if (fallos.length) alert(`Se ha guardado lo demás, pero esto ha fallado:\n\n${fallos.join("\n")}`);
+      else { alert(`Recuento guardado: ${conDif.length} ajustes.`); closeM("recModal"); }
     }
 
     function openMovModal(grupo) {
@@ -1692,13 +1875,15 @@
       const tbF = document.createElement("div");
       tbF.className = "filtro-row";
       filtroOwner = "all";
-      tbF.innerHTML = !searchQuery ? `<button type="button" class="export-btn export-inv btn-limpiar" data-a="limpiar">🧹 Limpiar catálogo</button>
+      tbF.innerHTML = !searchQuery ? `<button type="button" class="export-btn export-sheets btn-limpiar" data-a="recuento">📋 Recuento físico</button>
+        <button type="button" class="export-btn export-inv btn-limpiar" data-a="limpiar">🧹 Limpiar catálogo</button>
         <button type="button" class="export-btn export-inv btn-limpiar" data-a="familia">➕ Nueva familia</button>` : "";
       tbF.querySelectorAll("[data-a]").forEach(b => b.addEventListener("click", () => {
         const a = b.dataset.a;
         if (a === "editop") editOwner(filtroOwner);
         else if (a === "addop") addOwner();
         else if (a === "limpiar") openLimpiar();
+        else if (a === "recuento") openRecuento();
         else if (a === "familia") nuevaFamilia(ownerActual());
       }));
       if (tbF.innerHTML && puedeMover()) container.appendChild(tbF);
@@ -2468,6 +2653,7 @@
       document.getElementById("mSueltas").value = "0";
       document.getElementById("mPorCaja").value = "";
       document.getElementById("adjHint").style.display = "none";
+      document.getElementById("fgMotivo").style.display = "none";
       document.getElementById("quickMov").style.display = "none";
       document.getElementById("btnDelete").style.display = "none";
       document.getElementById("btnHist").style.display = "none";
@@ -2497,6 +2683,9 @@
       document.getElementById("mMovQty").value = "";
       document.getElementById("quickMsg").textContent = "";
       document.getElementById("adjHint").style.display = "block";
+      document.getElementById("mMotivo").innerHTML = `<option value="">Elige un motivo…</option>` + MOTIVOS_AJUSTE.filter(x => x !== "Alta de material").map(x => `<option>${x}</option>`).join("");
+      document.getElementById("mObs").value = "";
+      document.getElementById("fgMotivo").style.display = "flex";
       document.getElementById("quickMov").style.display = "block";
       document.getElementById("btnDelete").style.display = "inline-block";
       document.getElementById("btnHist").style.display = "block";
@@ -2548,8 +2737,9 @@
         if (!item) return;
         if (item.unit === "bobina" && unit !== "bobina" && fueraTotal(item) > 0) return alert("Tiene bobinas fuera: no se puede cambiar la unidad hasta que vuelvan.");
         if (item.retornable && !retornable && fueraTotal(item) > 0) return alert("Hay unidades prestadas: no se puede desmarcar \"Se presta y se devuelve\" hasta que vuelvan.");
-        if (!await consulta(sb.from("items").update({ name, cat, unit, min, por_caja: porCaja, owner, retornable, updated_at: new Date().toISOString() }).eq("id", editId))) return;
         hayAjuste = qty !== editOrigQty || (unit === "caja" && sueltas !== editOrigSueltas) || (unit === "bobina" && metros !== editOrigMetros);
+        if (hayAjuste && !document.getElementById("mMotivo").value) return alert("Has cambiado el stock: elige el motivo del ajuste.");
+        if (!await consulta(sb.from("items").update({ name, cat, unit, min, por_caja: porCaja, owner, retornable, updated_at: new Date().toISOString() }).eq("id", editId))) return;
       } else {
         id = uid(owner === "propio" ? "c" : owner);
         if (!await consulta(sb.from("items").insert({ id, name, owner, cat, unit, min, por_caja: porCaja, retornable }))) return;
@@ -2562,7 +2752,9 @@
           p_item: id,
           p_qty: qty,
           p_sueltas: unit === "caja" ? sueltas : (actual ? actual.sueltas : 0),
-          p_metros: unit === "bobina" ? metros : (actual ? actual.metros : 0)
+          p_metros: unit === "bobina" ? metros : (actual ? actual.metros : 0),
+          p_motivo: editId ? document.getElementById("mMotivo").value : "Alta de material",
+          p_obs: editId ? document.getElementById("mObs").value.trim() : null
         })) return;
       } else await refrescar();
       closeM("itemModal");
@@ -2657,6 +2849,7 @@
       agotados: { mes: false, owner: true, quien: "", hint: "Solo lo que está a cero ahora mismo." },
       vehiculo: { mes: true, owner: false, quien: "furgos", hint: "Cada furgoneta con sus personas, las bobinas que tiene ahora y lo que se le ha entregado en el periodo." },
       persona: { mes: true, owner: false, quien: "personas", hint: "Cada persona con su furgoneta, las bobinas que tiene ahora y lo que se le ha entregado en el periodo." },
+      balance: { mes: true, owner: false, quien: "", hint: "Por material: stock al inicio, entradas, entregas, devoluciones, salidas, ajustes y stock al final del periodo." },
       consumo: { mes: true, owner: true, quien: "", hint: "Total de entradas, salidas, asignaciones y metros gastados de cada material en el periodo." },
       movimientos: { mes: true, owner: true, quien: "", hint: "Cada movimiento con fecha, hora, a quién y quién lo registró." },
       asignaciones: { mes: true, owner: false, quien: "ambos", hint: "Lista por fechas de todo lo entregado y de las bobinas devueltas con metros gastados." }
@@ -2732,7 +2925,59 @@
       let titulo, headers, rows, resumen = [], secciones = null, orient = "landscape";
       const conMov = new Set(movs.map(m => m.id));
 
-      if (tipo === "inventario") {
+      if (tipo === "balance") {
+        // Límites del periodo
+        let ini = 0, fin = Date.now();
+        if (mes === "rango") { ini = dDesde; fin = Math.min(dHasta, Date.now()); }
+        else if (mes && mes !== "all") {
+          const [y, mo] = mes.split("-").map(Number);
+          ini = new Date(y, mo - 1, 1).getTime();
+          fin = Math.min(new Date(y, mo, 1).getTime() - 1, Date.now());
+        }
+        titulo = "Balance de stock del almacén";
+        // Efecto de cada movimiento en las unidades principales del almacén y en los metros
+        const efecto = m => {
+          let q = 0, mt = 0;
+          if (m.tipo === "entrada" && !m.sueltas) q = m.cant;
+          else if (m.tipo === "salida" && !m.sueltas) q = -m.cant;
+          else if (m.tipo === "asignacion" && !m.sueltas) q = -m.cant;
+          else if (m.tipo === "devolucion" && !m.sueltas) q = m.cant;
+          else if (m.tipo === "ajuste" && !m.unitOverride) q = m.cant;
+          else if (m.tipo === "ajuste" && m.unitOverride === "metro") mt = m.cant;
+          else if (m.tipo === "metros") {
+            mt = -m.cant;
+            if ((m.personaKey || m.destinoKey) && !m.terminada) q = 1;
+            if (!(m.personaKey || m.destinoKey) && m.terminada) q = -1;
+          }
+          if (m.abiertas) q -= m.abiertas;
+          return { q, mt };
+        };
+        rows = [];
+        let totIni = 0, totFin = 0, conMov = 0;
+        items.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(i => {
+          const mi = movs.filter(m => m.id === i.id);
+          let finQ = i.qty, finM = i.metros;
+          mi.filter(m => m.t > fin).forEach(m => { const e = efecto(m); finQ -= e.q; finM -= e.mt; });
+          const dentro = mi.filter(m => m.t >= ini && m.t <= fin);
+          const sum = { entrada: 0, asignacion: 0, devolucion: 0, salida: 0, ajuste: 0, metros: 0, mtGast: 0 };
+          let iniQ = finQ, iniM = finM;
+          dentro.forEach(m => {
+            const e = efecto(m); iniQ -= e.q; iniM -= e.mt;
+            if (m.tipo === "metros") { sum.mtGast += m.cant; if (e.q > 0) sum.devolucion += e.q; else if (e.q < 0) sum.salida -= e.q; }
+            else if (m.tipo === "ajuste") sum.ajuste += e.q;
+            else if (m.tipo === "salida" || m.tipo === "asignacion" || m.tipo === "devolucion" || m.tipo === "entrada") sum[m.tipo] += Math.abs(e.q + (m.abiertas || 0));
+            if (m.abiertas) sum.salida += m.abiertas;
+          });
+          if (!dentro.length && !iniQ && !finQ) return;
+          if (dentro.length) conMov++;
+          totIni += iniQ; totFin += finQ;
+          rows.push([i.name, unidadPlural(i.unit), iniQ, sum.entrada, sum.asignacion, sum.devolucion, sum.salida, sum.ajuste, finQ,
+            esBobina(i) ? iniM : "", esBobina(i) ? sum.mtGast : "", esBobina(i) ? finM : ""]);
+        });
+        headers = ["Producto", "Unidad", "Inicial", "Entradas", "Entregado", "Devuelto", "Salidas", "Ajustes", "Final", "Metros inicial", "Metros gastados", "Metros final"];
+        resumen = [["Materiales con movimiento", conMov], ["Materiales en el informe", rows.length]];
+        orient = "landscape";
+      } else if (tipo === "inventario") {
         titulo = "Inventario de almacén";
         const lista = items.filter(i => okOwner(i.owner)).sort(porOwner);
         headers = ["Propietario", "Familia", "Producto", "En almacén", "Unidad", "Sueltas", "Uds por caja", "Metros totales", "Bobinas fuera", "Mínimo"];
@@ -2810,8 +3055,8 @@
       } else if (tipo === "movimientos") {
         titulo = "Movimientos de almacén";
         const lista = movs.filter(m => okOwner(m.owner) && okMes(m.t)).slice().reverse();
-        headers = ["Fecha", "Hora", "Propietario", "Producto", "Tipo", "Cantidad", "Unidad", "Persona", "Furgoneta", "Detalle", "Registrado por"];
-        rows = lista.map(m => [...fechaHora(m.t), ownerName(m.owner), m.name, TIPOS_TXT[m.tipo] || m.tipo, m.cant, unidadMov(m), m.persona || "", m.destino || "", detalleMov(m), m.user || ""]);
+        headers = ["Fecha", "Hora", "Producto", "Tipo", "Cantidad", "Unidad", "Persona", "Furgoneta", "Detalle", "Motivo", "Registrado por"];
+        rows = lista.map(m => [...fechaHora(m.t), m.name, TIPOS_TXT[m.tipo] || m.tipo, m.cant, unidadMov(m), m.persona || "", m.destino || "", detalleMov(m), motivoTxt(m), m.user || ""]);
         const c = t => lista.filter(m => m.tipo === t).length;
         resumen = [["Movimientos", lista.length], ["Entradas", c("entrada")], ["Salidas", c("salida")], ["Asignaciones", c("asignacion")], ["Ajustes", c("ajuste")]];
       } else {
