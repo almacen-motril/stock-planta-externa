@@ -629,6 +629,14 @@
     .check input { width: 20px; height: 20px; }
     .reponer-toolbar { flex-wrap: wrap; }
     .btn-export-main { width: 100%; }
+    /* Pestañas: en ordenador bajan a varias filas; en móvil se deslizan con barra visible */
+    .van-tabs { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,0.45) transparent; }
+    .van-tabs::-webkit-scrollbar { display: block !important; height: 6px; }
+    .van-tabs::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.45); border-radius: 6px; }
+    .van-tabs::-webkit-scrollbar-track { background: transparent; }
+    @media (min-width: 768px) {
+      .van-tabs { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; }
+    }
     .autoria { text-align: center; font-size: 0.6rem; color: var(--text-muted); opacity: 0.45; padding: 18px 10px 90px; }
     .dash { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 12px; }
     .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -736,6 +744,12 @@
     .dv-row.on .dv-fields { display: flex; }
     .dv-fields input[type=number] { width: 110px; padding: 8px; background: #0b0f19; border: 1px solid var(--card-border); border-radius: 8px; color: #fff; font-size: 0.95rem; }
     .dv-fields span, .dv-fields label { font-size: 0.78rem; color: var(--text-muted); display: flex; gap: 6px; align-items: center; }
+    .btn-gastado { border: 1px solid rgba(245,158,11,0.55); background: rgba(245,158,11,0.15); color: #fde68a; }
+    .m-gastado { background: #f59e0b; color: #0b0f19; }
+    .dv-acc { display: inline-flex; border: 1px solid var(--card-border); border-radius: 8px; overflow: hidden; }
+    .dv-acc button { border: 0; background: transparent; color: var(--text-muted); padding: 7px 10px; font-family: inherit; font-size: 0.76rem; font-weight: 800; cursor: pointer; }
+    .dv-acc button.sel-dev { background: rgba(16,185,129,0.22); color: #a7f3d0; }
+    .dv-acc button.sel-gas { background: rgba(245,158,11,0.22); color: #fde68a; }
     .dv-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
     button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     @media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
@@ -972,6 +986,19 @@
     </div>
   </div>
 
+  <!-- Modal ¿lo ha gastado? -->
+  <div id="gastoModal" class="modal-backdrop">
+    <div class="modal-sheet" style="max-width:440px;">
+      <h2>🔨 ¿Ha gastado lo anterior?</h2>
+      <p class="mov-sheet-sub" id="gastoSub"></p>
+      <div class="modal-btns" style="flex-direction:column;">
+        <button class="m-btn m-save" id="gastoSi">Sí, lo ha gastado: marcarlo y darle el nuevo</button>
+        <button class="m-btn m-cancel" id="gastoNo">No, darle el nuevo y que lo tenga todo</button>
+        <button class="m-btn m-cancel" id="gastoCancel">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal anular -->
   <div id="anularModal" class="modal-backdrop" onclick="if (event.target === this) closeM('anularModal')">
     <div class="modal-sheet">
@@ -1025,7 +1052,7 @@
     <div class="modal-sheet">
       <h2 id="dvTitle">↩️ Devolver al almacén</h2>
       <div class="dv-head">
-        <p class="mov-sheet-sub" id="dvSub" style="margin:0;">Marca lo que devuelve y la cantidad.</p>
+        <p class="mov-sheet-sub" id="dvSub" style="margin:0;">Marca cada cosa y elige si la devuelve o la ha gastado.</p>
         <label class="check" style="margin:0;"><input type="checkbox" id="dvTodos" onchange="dvMarcarTodos(this.checked)"> Todo</label>
       </div>
       <div id="dvList" class="dv-list"></div>
@@ -1593,6 +1620,7 @@
 
     function textoMov(m) {
       const abiertasTxt = m.abiertas ? `, abiertas ${m.abiertas} ${unidadTxt("caja", m.abiertas)}` : "";
+      if (m.tipo === "consumo") return { cls: "mov-adj-cell", txt: `${m.cant} ${m.sueltas ? "uds sueltas" : unidadTxt(m.unit, m.cant)} ${m.cant === 1 ? "gastado" : "gastados"} por ${esc(quienTxt(m))}` };
       if (m.tipo === "devolucion") return { cls: "mov-in-cell", txt: `${m.cant} ${m.sueltas ? "uds sueltas" : unidadTxt(m.unit, m.cant)} de vuelta de ${esc(quienTxt(m))}` };
       if (m.tipo === "asignacion") return { cls: "mov-asig-cell", txt: `${m.cant} ${m.unit === "unidad" && m.sueltas ? "uds sueltas" : unidadTxt(m.unit, m.cant)} a ${esc(quienTxt(m))}${abiertasTxt}` };
       if (m.tipo === "metros") {
@@ -1769,6 +1797,16 @@
 
     function renderTabs() {
       const bar = document.getElementById("ownerTabsBar");
+      // La rueda del ratón desplaza las pestañas en horizontal cuando no caben
+      if (!bar.dataset.wheel) {
+        bar.dataset.wheel = "1";
+        bar.addEventListener("wheel", e => {
+          if (bar.scrollWidth > bar.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+            bar.scrollLeft += e.deltaY;
+            e.preventDefault();
+          }
+        }, { passive: false });
+      }
       bar.innerHTML = "";
       const pon = btn => { btn.style.paddingRight = "12px"; bar.appendChild(btn); };
       pon(tabBtn("🏠 Inicio", null, currentTab === "inicio", "", () => selectTab("inicio")));
@@ -1960,7 +1998,7 @@
       lista.forEach(m => {
         const k = m.id + "|" + m.unit + "|" + (m.sueltas ? 1 : 0);
         if (!resumen[k]) resumen[k] = { name: m.name, owner: m.owner, unit: m.unit, sueltas: !!m.sueltas, cant: 0 };
-        resumen[k].cant += m.tipo === "devolucion" ? -m.cant : m.cant;
+        resumen[k].cant += m.tipo === "asignacion" ? m.cant : -m.cant;
       });
       return Object.values(resumen).filter(r => r.cant > 0).sort((a, b) => a.name.localeCompare(b.name));
     }
@@ -1972,7 +2010,7 @@
         const holder = m.personaKey || m.destinoKey || "";
         const k = m.id + "|" + (m.sueltas ? 1 : 0) + "|" + holder;
         if (!r[k]) r[k] = { id: m.id, name: m.name, owner: m.owner, unit: m.unit, sueltas: !!m.sueltas, holder, cant: 0, ultimo: 0 };
-        r[k].cant += m.tipo === "devolucion" ? -m.cant : m.cant;
+        r[k].cant += m.tipo === "asignacion" ? m.cant : -m.cant;
         if (m.tipo === "asignacion") r[k].ultimo = Math.max(r[k].ultimo, m.t);
       });
       return Object.values(r).filter(x => x.cant > 0).sort((a, b) => a.name.localeCompare(b.name));
@@ -2005,17 +2043,22 @@
     let dvLineas = [];
 
     // claves: personas/furgonetas cuyas cosas se muestran; filtroCons: qué entregas de consumibles cuentan
-    function openDevolverVarios(titulo, claves, filtroCons) {
+    let dvModo = "devolver";
+    function openDevolverVarios(titulo, claves, filtroCons, modo) {
+      dvModo = modo === "gastado" ? "gastado" : "devolver";
       dvLineas = [];
-      bobinasDe(claves).forEach(b => {
+      if (dvModo === "devolver") bobinasDe(claves).forEach(b => {
         if (esBobina(b.item)) {
           for (let k = 0; k < b.n; k++) dvLineas.push({ tipo: "bobina", item: b.item, holder: b.key, max: 1 });
         } else dvLineas.push({ tipo: "ret", item: b.item, holder: b.key, max: b.n });
       });
-      consumiblesNetos(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && !esRetornableId(m.id) && filtroCons(m)))
+      consumiblesNetos(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion" || m.tipo === "consumo") && !esRetornableId(m.id) && filtroCons(m)))
         .forEach(r => { const it = items.find(i => i.id === r.id); if (it) dvLineas.push({ tipo: "cons", item: it, holder: r.holder, max: r.cant, sueltas: r.sueltas }); });
-      if (!dvLineas.length) return alert("No tiene nada que devolver.");
-      document.getElementById("dvTitle").textContent = `↩️ Devolver al almacén: ${titulo}`;
+      if (!dvLineas.length) return alert(dvModo === "gastado" ? "No tiene consumibles pendientes de gastar." : "No tiene nada que devolver.");
+      document.getElementById("dvTitle").textContent = dvModo === "gastado" ? `🔨 Marcar gastado: ${titulo}` : `↩️ Devolver al almacén: ${titulo}`;
+      document.getElementById("dvSub").textContent = dvModo === "gastado"
+        ? "Marca lo que ha gastado y cuánto. No vuelve al almacén; deja de contar como suyo."
+        : "Marca lo que devuelve y la cantidad. Vuelve al almacén.";
       document.getElementById("dvTodos").checked = false;
       const varios = new Set(dvLineas.map(l => l.holder)).size > 1;
       document.getElementById("dvList").innerHTML = dvLineas.map((l, k) => {
@@ -2040,7 +2083,9 @@
     function dvContar() {
       const n = document.querySelectorAll("#dvList [data-c]:checked").length;
       const b = document.getElementById("dvBtn");
-      b.textContent = n ? `Devolver ${n} ${n === 1 ? "cosa" : "cosas"}` : "Devolver";
+      const verbo = dvModo === "gastado" ? "Marcar gastado" : "Devolver";
+      b.textContent = n ? `${verbo} ${n} ${n === 1 ? "cosa" : "cosas"}` : verbo;
+      b.className = "m-btn " + (dvModo === "gastado" ? "m-gastado" : "m-save");
       b.disabled = !n;
     }
 
@@ -2059,7 +2104,8 @@
         } else {
           const q = parseInt(document.querySelector(`[data-q="${k}"]`).value, 10) || 0;
           if (q < 1 || q > l.max) return alert(`${l.item.name}: la cantidad tiene que estar entre 1 y ${l.max}.`);
-          ops.push({ l, fn: "devolver", args: { p_item: l.item.id, p_origen: l.holder, p_cant: q, p_sueltas: !!l.sueltas } });
+          const fn = dvModo === "gastado" ? "consumir" : "devolver";
+          ops.push({ l, fn, args: { p_item: l.item.id, p_origen: l.holder, p_cant: q, p_sueltas: !!l.sueltas } });
         }
       }
       ocupado = true;
@@ -2072,7 +2118,7 @@
       } catch (e) { fallos.push("Sin conexión con el servidor."); }
       finally { ocupado = false; }
       await refrescar();
-      if (fallos.length) alert(`Se ha devuelto lo demás, pero esto ha fallado:\n\n${fallos.join("\n")}`);
+      if (fallos.length) alert(`Se ha guardado lo demás, pero esto ha fallado:\n\n${fallos.join("\n")}`);
       else closeM("dvModal");
     }
 
@@ -2081,7 +2127,7 @@
       html += bobinas.length
         ? "<ul>" + bobinas.map(b => `<li><span>${esc(b.item.name)}${esBobina(b.item) ? ` <span class="metros-line">${fmtM(b.item.metros)}</span>` : ""}${b.quien ? ` <span class="mov-user">${esc(b.quien)}</span>` : ""}</span><span class="li-acc"><b>${b.n} ${unidadTxt(b.item.unit, b.n)}</b></span></li>`).join("") + "</ul>"
         : `<p class="hint">Nada pendiente de devolver.</p>`;
-      html += "<h3>Consumibles entregados (descontando devoluciones)</h3>";
+      html += "<h3>Consumibles que tiene ahora (entregado − devuelto − gastado)</h3>";
       html += filas.length
         ? "<ul>" + filas.map(r => `<li><span>${esc(r.name)} <span class="owner-tag">${esc(ownerName(r.owner))}</span></span><b>${r.cant} ${r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant)}</b></li>`).join("") + "</ul>"
         : `<p class="hint">Todavía no se le ha asignado material.</p>`;
@@ -2097,7 +2143,9 @@
         .map(b => ({ ...b, dias: diasFuera(b.item, b.key) })).sort((a, b) => b.dias - a.dias);
       const dash = document.createElement("div");
       dash.className = "dash";
-      let html = puedeMover() ? `<button type="button" class="btn-wide btn-devolver" data-dvall="1" style="min-height:46px;font-size:0.9rem;">↩️ Devolver material de ${esc(f.name)}</button>` : "";
+      let html = puedeMover() ? `<div style="display:flex;gap:8px;">
+          <button type="button" class="btn-wide btn-devolver" data-dvall="devolver" style="min-height:46px;font-size:0.9rem;">↩️ Devolver</button>
+          <button type="button" class="btn-wide btn-gastado" data-dvall="gastado" style="min-height:46px;font-size:0.9rem;">🔨 Gastado</button></div>` : "";
       html += `<div class="dash-box"><h3>👷 Personas de esta furgoneta</h3>${suyas.length
         ? `<p class="hint">${suyas.map(p => esc(p.name)).join(", ")}</p>`
         : `<p class="hint">Sin personas. Puedes asignarles esta furgoneta en 👷 Personas.</p>`}</div>`;
@@ -2111,15 +2159,14 @@
           <span class="li-acc"><b class="${b.dias >= DIAS_ALERTA_BOBINA ? "dias-alerta" : ""}">${b.n} ${unidadTxt(b.item.unit, b.n)}</b>${btn}</span></li>`;
       }).join("")}</ul>` : `<p class="hint">No tiene nada pendiente de devolver.</p>`;
       html += `</div>`;
-      const cons = consumiblesNetos(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && m.destinoKey === fk
+      const cons = consumiblesNetos(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion" || m.tipo === "consumo") && m.destinoKey === fk
         && !esRetornableId(m.id)));
-      html += `<div class="dash-box"><h3>🧰 Consumibles entregados <small>lo que le sobre, con ↩️ Devolver material</small></h3>${htmlConsumibles(cons, true)}</div>`;
-      html += `<div class="dash-box"><h3>🕒 Entregas y devoluciones <small>fecha y hora</small></h3>${htmlLineaTiempo(movsAll.filter(m => m.destinoKey === fk && ["asignacion", "devolucion", "metros"].includes(m.tipo)))}</div>`;
+      html += `<div class="dash-box"><h3>🧰 Consumibles entregados <small>entregado − devuelto − gastado</small></h3>${htmlConsumibles(cons, true)}</div>`;
+      html += `<div class="dash-box"><h3>🕒 Entregas y devoluciones <small>fecha y hora</small></h3>${htmlLineaTiempo(movsAll.filter(m => m.destinoKey === fk && ["asignacion", "devolucion", "consumo", "metros"].includes(m.tipo)))}</div>`;
       dash.innerHTML = html;
       enlazarDevolverConsumibles(dash, cons);
       enlazarAnular(dash, () => render());
-      const bAll = dash.querySelector("[data-dvall]");
-      if (bAll) bAll.addEventListener("click", () => openDevolverVarios(f.name, claves, m => m.destinoKey === fk));
+      dash.querySelectorAll("[data-dvall]").forEach(bAll => bAll.addEventListener("click", () => openDevolverVarios(f.name, claves, m => m.destinoKey === fk, bAll.dataset.dvall)));
       dash.querySelectorAll("[data-dev]").forEach(btn => btn.addEventListener("click", () => {
         const b = tiene[Number(btn.dataset.dev)];
         if (esBobina(b.item)) openMetros(b.item.id, b.key);
@@ -2152,7 +2199,7 @@
 
     function renderQuien(container) {
       verQuien = "personas";
-      const asignaciones = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && !esRetornableId(m.id));
+      const asignaciones = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion" || m.tipo === "consumo") && !esRetornableId(m.id));
 
       if (verQuien === "personas") {
         if (!personas.length) {
@@ -2166,18 +2213,20 @@
           container.appendChild(makeGroup(`p:${p.key}`, `👷 ${esc(p.name)}`, meta, body => {
             const tools = document.createElement("div");
             tools.className = "group-tools tools-persona";
-            tools.innerHTML = `<button type="button" class="btn-wide btn-devolver">↩️ Devolver material</button>
-              <button type="button" class="btn-wide btn-asignar">✎ Editar persona</button>`;
-            const [bDv, bEd] = tools.querySelectorAll("button");
-            bDv.addEventListener("click", () => openDevolverVarios(p.name, [p.key], m => m.personaKey === p.key));
+            tools.innerHTML = `<button type="button" class="btn-wide btn-devolver">↩️ Devolver</button>
+              <button type="button" class="btn-wide btn-gastado">🔨 Gastado</button>
+              <button type="button" class="btn-wide btn-asignar">✎ Editar</button>`;
+            const [bDv, bGs, bEd] = tools.querySelectorAll("button");
+            bDv.addEventListener("click", () => openDevolverVarios(p.name, [p.key], m => m.personaKey === p.key, "devolver"));
+            bGs.addEventListener("click", () => openDevolverVarios(p.name, [p.key], m => m.personaKey === p.key, "gastado"));
             bEd.addEventListener("click", () => openPersonaModal(p.key));
             body.appendChild(tools);
             const div = document.createElement("div");
             div.className = "furgo-list";
             const cons = consumiblesNetos(asignaciones.filter(m => m.personaKey === p.key));
-            div.innerHTML = htmlQuienTiene(bobinas, []).replace(/<h3>Consumibles entregados[\s\S]*$/, "")
-              + `<h3>Consumibles entregados (descontando devoluciones)</h3>` + htmlConsumibles(cons, false)
-              + `<h3>🕒 Entregas y devoluciones</h3>` + htmlLineaTiempo(movsAll.filter(m => m.personaKey === p.key && ["asignacion", "devolucion", "metros"].includes(m.tipo)));
+            div.innerHTML = htmlQuienTiene(bobinas, []).replace(/<h3>Consumibles[\s\S]*$/, "")
+              + `<h3>Consumibles que tiene ahora (entregado − devuelto − gastado)</h3>` + htmlConsumibles(cons, false)
+              + `<h3>🕒 Entregas y devoluciones</h3>` + htmlLineaTiempo(movsAll.filter(m => m.personaKey === p.key && ["asignacion", "devolucion", "consumo", "metros"].includes(m.tipo)));
             enlazarDevolverConsumibles(div, cons);
             div.querySelectorAll("[data-devr]").forEach(btn => btn.addEventListener("click", () => {
               const [id, h] = btn.dataset.devr.split("|");
@@ -2294,6 +2343,7 @@
           ${filaMes("🔻 Salidas", ["salida"])}
           ${filaMes("🚐 Asignaciones", ["asignacion"])}
           ${filaMes("↩️ Devoluciones", ["devolucion"])}
+          ${filaMes("🔨 Gastado", ["consumo"])}
           ${filaMes("✎ Ajustes", ["ajuste"])}
           <span>📏 Metros gastados</span><b>${fmtM(metrosMes(mesAct))}</b><b style="color:var(--text-muted)">${fmtM(metrosMes(mesAnt))}</b>
         </div></div>`;
@@ -2486,7 +2536,7 @@
       if (document.getElementById("asignModo").value === "devolver") {
         if (!esRetornable(item)) {
           // No se puede devolver más de lo que se le entregó (neto)
-          const neto = consumiblesNetos(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && m.id === item.id
+          const neto = consumiblesNetos(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion" || m.tipo === "consumo") && m.id === item.id
             && (m.personaKey === fKey || (!m.personaKey && m.destinoKey === fKey)))).filter(r => r.sueltas === sueltas).reduce((a, r) => a + r.cant, 0);
           if (n > neto) return alert(`${holderName(fKey)} solo tiene ${neto} ${sueltas ? "uds sueltas" : unidadTxt(item.unit, neto)} de este material entregadas.`);
         }
@@ -2494,7 +2544,29 @@
         return;
       }
       if (!sueltas && n > item.qty) return alert(`Solo hay ${item.qty} ${unidadTxt(item.unit, item.qty)} en el almacén.`);
+      // Si ya tiene de este mismo material sin gastar, preguntar
+      if (!esRetornable(item)) {
+        const tiene = consumiblesNetos(movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion" || m.tipo === "consumo") && m.id === item.id
+          && (m.personaKey === fKey || (!m.personaKey && m.destinoKey === fKey)))).filter(r => r.sueltas === sueltas).reduce((a, r) => a + r.cant, 0);
+        if (tiene > 0) {
+          const u = sueltas ? "uds sueltas" : unidadTxt(item.unit, tiene);
+          const resp = await preguntarGasto(`${holderName(fKey)} todavía tiene ${tiene} ${u} de ${item.name} sin marcar como gastado.`);
+          if (resp === "cancel") return;
+          if (resp === "si" && !await rpc("consumir", { p_item: item.id, p_origen: fKey, p_cant: tiene, p_sueltas: sueltas })) return;
+        }
+      }
       if (await rpc("asignar", { p_item: item.id, p_destino: fKey, p_cant: n, p_sueltas: sueltas })) closeM("asignModal");
+    }
+
+    function preguntarGasto(texto) {
+      return new Promise(res => {
+        document.getElementById("gastoSub").textContent = texto;
+        const fin = v => { closeM("gastoModal"); res(v); };
+        document.getElementById("gastoSi").onclick = () => fin("si");
+        document.getElementById("gastoNo").onclick = () => fin("no");
+        document.getElementById("gastoCancel").onclick = () => fin("cancel");
+        openM("gastoModal");
+      });
     }
 
     // ================== METROS DE BOBINA ==================
@@ -2812,7 +2884,7 @@
     }
 
     // ================== EXPORTACIONES ==================
-    const TIPOS_TXT = { entrada: "Entrada", salida: "Salida", asignacion: "Asignación", metros: "Metros gastados", ajuste: "Ajuste", devolucion: "Devolución" };
+    const TIPOS_TXT = { entrada: "Entrada", salida: "Salida", asignacion: "Asignación", metros: "Metros gastados", ajuste: "Ajuste", devolucion: "Devolución", consumo: "Gastado" };
 
     function ahora() {
       const d = new Date();
@@ -3014,13 +3086,13 @@
           const suyas = esP ? [] : personas.filter(p => p.furgo === sj.key);
           const claves = esP ? [sj.key] : [sj.key, ...suyas.map(p => p.key)];
           const bob = bobinasDe(claves);
-          const entregas = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion") && !esRetornableId(m.id) && okMes(m.t) && (esP ? m.personaKey === sj.key : m.destinoKey === sj.key));
+          const entregas = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion" || m.tipo === "consumo") && !esRetornableId(m.id) && okMes(m.t) && (esP ? m.personaKey === sj.key : m.destinoKey === sj.key));
           const agg = resumenAsignado(entregas);
           const col1 = sj.name;
           const col2 = esP ? (sj.furgo ? furgoName(sj.furgo) : "Sin furgoneta") : (suyas.map(p => p.name).join(", ") || "Sin personas");
           const filasS = [];
           bob.forEach(b => filasS.push([b.item.name + (esBobina(b.item) ? `, ${fmtM(b.item.metros)}` : "") + (!esP && b.key !== sj.key ? ` (la tiene ${holderName(b.key)})` : ""), ownerName(b.item.owner), b.n, unidadTxt(b.item.unit, b.n), "Lo tiene ahora"]));
-          agg.forEach(r => filasS.push([r.name, ownerName(r.owner), r.cant, r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant), `Entregado neto (${periodoTxt})`]));
+          agg.forEach(r => filasS.push([r.name, ownerName(r.owner), r.cant, r.sueltas ? "uds sueltas" : unidadTxt(r.unit, r.cant), `Entregado − devuelto − gastado (${periodoTxt})`]));
           filasS.forEach(f => rows.push([col1, col2, ...f]));
           totBob += bob.reduce((a, b) => a + b.n, 0);
           totEnt += entregas.filter(m => m.tipo === "asignacion").length;
@@ -3040,7 +3112,7 @@
         movs.filter(m => okOwner(m.owner) && okMes(m.t)).forEach(m => {
           const u = m.tipo === "metros" ? null : unidadMov(m);
           const k = m.id + "|" + (u || unidadPlural(m.unit));
-          if (!acc[k]) acc[k] = { owner: m.owner, name: m.name, unidad: u || unidadPlural(m.unit), entradas: 0, salidas: 0, asignado: 0, devuelto: 0, ajustes: 0, metros: 0 };
+          if (!acc[k]) acc[k] = { owner: m.owner, name: m.name, unidad: u || unidadPlural(m.unit), entradas: 0, salidas: 0, asignado: 0, devuelto: 0, gastado: 0, ajustes: 0, metros: 0 };
           const a = acc[k];
           if (m.tipo === "entrada") a.entradas += m.cant;
           else if (m.tipo === "salida") a.salidas += m.cant;
@@ -3048,9 +3120,10 @@
           else if (m.tipo === "metros") a.metros += m.cant;
           else if (m.tipo === "ajuste" && u !== "m") a.ajustes += m.cant;
           else if (m.tipo === "devolucion") a.devuelto += m.cant;
+          else if (m.tipo === "consumo") a.gastado += m.cant;
         });
-        headers = ["Propietario", "Producto", "Unidad", "Entradas", "Salidas", "Asignado", "Devuelto", "Ajustes de recuento", "Metros gastados"];
-        rows = Object.values(acc).sort(porOwner).map(a => [ownerName(a.owner), a.name, a.unidad, a.entradas, a.salidas, a.asignado, a.devuelto, a.ajustes, a.metros || ""]);
+        headers = ["Producto", "Unidad", "Entradas", "Salidas", "Asignado", "Devuelto", "Gastado (marcado)", "Ajustes de recuento", "Metros gastados"];
+        rows = Object.values(acc).sort(porOwner).map(a => [a.name, a.unidad, a.entradas, a.salidas, a.asignado, a.devuelto, a.gastado, a.ajustes, a.metros || ""]);
         resumen = [["Materiales con movimiento", rows.length], ["Metros gastados", fmtM(Object.values(acc).reduce((s, a) => s + a.metros, 0))]];
       } else if (tipo === "movimientos") {
         titulo = "Movimientos de almacén";
@@ -3063,10 +3136,10 @@
         titulo = "Asignaciones a personas y furgonetas";
         headers = ["Fecha", "Hora", "Persona", "Furgoneta", "Propietario", "Producto", "Tipo", "Cantidad", "Unidad", "Detalle", "Registrado por"];
         const okQuien = m => quien === "all" || (quien.startsWith("p-") ? m.personaKey === quien : m.destinoKey === quien);
-        const lista = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion" || (m.tipo === "metros" && (m.destinoKey || m.personaKey))) && okMes(m.t) && okQuien(m)).slice().reverse();
+        const lista = movs.filter(m => (m.tipo === "asignacion" || m.tipo === "devolucion" || m.tipo === "consumo" || (m.tipo === "metros" && (m.destinoKey || m.personaKey))) && okMes(m.t) && okQuien(m)).slice().reverse();
         rows = lista.map(m => [...fechaHora(m.t), m.persona || "", m.destino || "", ownerName(m.owner), m.name,
-          m.tipo === "asignacion" ? "Asignado" : m.tipo === "devolucion" ? "Devuelto" : "Bobina devuelta, metros gastados", m.cant, unidadMov(m), detalleMov(m), m.user || ""]);
-        resumen = [["Entregas", lista.filter(m => m.tipo === "asignacion").length], ["Devoluciones", lista.filter(m => m.tipo === "devolucion").length], ["Bobinas devueltas", lista.filter(m => m.tipo === "metros").length]];
+          m.tipo === "asignacion" ? "Asignado" : m.tipo === "devolucion" ? "Devuelto" : m.tipo === "consumo" ? "Gastado" : "Bobina devuelta, metros gastados", m.cant, unidadMov(m), detalleMov(m), m.user || ""]);
+        resumen = [["Entregas", lista.filter(m => m.tipo === "asignacion").length], ["Devoluciones", lista.filter(m => m.tipo === "devolucion").length], ["Gastados", lista.filter(m => m.tipo === "consumo").length], ["Bobinas devueltas", lista.filter(m => m.tipo === "metros").length]];
       }
       return { tipo, titulo, headers, rows, filtros, slugPeriodo, resumen, secciones, orient };
     }
